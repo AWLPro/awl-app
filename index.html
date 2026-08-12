@@ -8,7 +8,7 @@
 <!-- Firebase SDK Modülleri -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
   import { getFirestore, doc, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -39,10 +39,11 @@
       window.fbUser = user;
       authModal.style.display = "none";
       userProfileBar.style.display = "flex";
-      userEmailDisplay.innerText = user.displayName || user.email;
+      userEmailDisplay.innerText = user.isAnonymous ? "Misafir Kullanıcı 👤" : (user.displayName || user.email);
       await loadUserDataFromCloud();
       renderApp();
       renderWordPicker();
+      renderProgram();
     } else {
       window.fbUser = null;
       authModal.style.display = "flex";
@@ -97,6 +98,16 @@
         alert("Hesabınız başarıyla oluşturuldu!");
       }
     } catch (err) { errorBox.innerText = "Hata: " + err.message; }
+  };
+
+  window.handleAnonymousLogin = async function() {
+    const errorBox = document.getElementById("authError");
+    errorBox.innerText = "";
+    try {
+      await signInAnonymously(auth);
+    } catch (err) {
+      errorBox.innerText = "Misafir Giriş Hatası: " + err.message;
+    }
   };
 
   window.handlePasswordReset = async function() {
@@ -185,7 +196,6 @@
         overflow: hidden;
     }
 
-    /* MOBİL ÜST BAR & SİDEBAR */
     .mobile-header {
         display: none;
         background-color: var(--sidebar-bg);
@@ -231,7 +241,6 @@
     .sidebar-footer { padding: 15px 20px; border-top: 1px solid rgba(255, 255, 255, 0.1); text-align: center; }
     .theme-toggle-btn { width: 100%; background: #334155; color: #fff; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; }
 
-    /* ANA İÇERİK */
     .main-content { flex: 1; overflow-y: auto; padding: 20px; box-sizing: border-box; }
     .view-section { display: none; max-width: 900px; margin: 0 auto; }
     .view-section.active { display: block; }
@@ -285,7 +294,18 @@
     .pick-word-btn { background: var(--input-bg); border: 1px solid var(--border); color: var(--text); padding: 4px 6px; border-radius: 4px; font-size: 11px; cursor: pointer; }
     .pick-word-btn.selected { background: #2563eb; color: white; border-color: #2563eb; }
 
-    /* AUTH MODAL MOBİL UYUM */
+    /* PROGRAM TABLOSU STİLLERİ */
+    .program-week-title { font-size: 16px; font-weight: bold; color: var(--title-color); margin: 20px 0 10px 0; padding-bottom: 5px; border-bottom: 2px solid var(--border); }
+    .program-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .program-card.completed { border-left: 5px solid #16a34a; opacity: 0.85; }
+    .program-card-header { display: flex; justify-content: space-between; align-items: center; }
+    .program-date { font-weight: bold; font-size: 14px; color: var(--title-color); }
+    .program-badge { font-size: 11px; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 12px; font-weight: bold; }
+    .program-tasks { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+    .program-tasks li { margin-bottom: 6px; display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
+    .program-checkbox { margin-top: 2px; width: 16px; height: 16px; cursor: pointer; }
+
+    /* AUTH MODAL */
     .auth-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 15px; box-sizing: border-box; }
     .auth-card { background: var(--card-bg); border: 1px solid var(--border); padding: 25px 20px; border-radius: 12px; width: 100%; max-width: 340px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); text-align: center; box-sizing: border-box; }
     .auth-card h2 { margin-top: 0; color: var(--title-color); font-size: 18px; }
@@ -294,7 +314,9 @@
     .auth-btn { flex: 1; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }
     .auth-btn-login { background: #2563eb; color: white; }
     .auth-btn-register { background: #16a34a; color: white; }
-    .google-btn { width: 100%; background: #ffffff; color: #333; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; }
+    .google-btn { width: 100%; background: #ffffff; color: #333; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; }
+    .anon-btn { width: 100%; background: #64748b; color: #ffffff; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; }
+    .anon-btn:hover { background: #475569; }
     .auth-divider { display: flex; align-items: center; text-align: center; color: #94a3b8; font-size: 11px; margin: 12px 0; }
     .auth-divider::before, .auth-divider::after { content: ''; flex: 1; border-bottom: 1px solid var(--border); }
     .auth-divider:not(:empty)::before { margin-right: .5em; }
@@ -302,7 +324,6 @@
     .forgot-pass-link { display: block; font-size: 11px; color: #3b82f6; text-decoration: none; margin-top: 10px; cursor: pointer; }
     .auth-error { color: #ef4444; font-size: 11px; margin-top: 8px; min-height: 15px; }
 
-    /* MOBİL MEDYA SORGULARI */
     @media (max-width: 768px) {
         .mobile-header { display: flex; }
         .app-container { height: calc(100vh - 48px); }
@@ -319,13 +340,12 @@
 </head>
 <body>
 
-<!-- MOBİL ÜST MENÜ BAR -->
 <div class="mobile-header">
     <span class="mobile-header-title">🎓 AWL</span>
     <button class="menu-toggle-btn" onclick="toggleMobileSidebar()">☰ Menü</button>
 </div>
 
-<!-- GİRİŞ / KAYIT MODALI -->
+<!-- GİRİŞ MODALI -->
 <div class="auth-overlay" id="authModal">
     <div class="auth-card" id="mainAuthCard">
         <h2>AWL Giriş</h2>
@@ -334,6 +354,10 @@
         <button class="google-btn" onclick="handleGoogleLogin()">
             <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
             Google ile Giriş Yap
+        </button>
+
+        <button class="anon-btn" onclick="handleAnonymousLogin()">
+            👤 Misafir Olarak Devam Et
         </button>
 
         <div class="auth-divider">veya e-posta ile</div>
@@ -378,7 +402,8 @@
         </div>
 
         <ul class="sidebar-menu">
-            <li class="active" onclick="switchView('vocab-view', this)">📚 Kelime İstasyonu</li>
+            <li class="active" onclick="switchView('program-view', this)">📅 Çalışma Programı</li>
+            <li onclick="switchView('vocab-view', this)">📚 Kelime İstasyonu</li>
             <li onclick="switchView('essay-view', this)">✍️ Mini Essay Sandbox</li>
             <li onclick="switchView('spaced-view', this)">🧠 Akıllı Tekrar (Bugün)</li>
             <li onclick="switchView('tureng-view', this)">🇹🇷 Tureng Sözlük</li>
@@ -393,8 +418,23 @@
     <!-- ANA İÇERİK -->
     <div class="main-content" onclick="closeMobileSidebarIfOpen()">
 
+        <!-- ÇALIŞMA PROGRAMI SEKMESİ -->
+        <div id="program-view" class="view-section active">
+            <header>
+                <h1>Medipol Proficiency 30 Günlük Kamp</h1>
+                <p class="subtitle">12 Ağustos - 10 Eylül 2026 • Hızlandırılmış Yoğun Hazırlık Programı</p>
+            </header>
+
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill" id="programProgressFill"></div>
+                <div class="progress-text" id="programProgressText">0 / 30 Gün Tamamlandı (%0)</div>
+            </div>
+
+            <div id="program-container"></div>
+        </div>
+
         <!-- KELİME İSTASYONU -->
-        <div id="vocab-view" class="view-section active">
+        <div id="vocab-view" class="view-section">
             <header>
                 <h1>Akademik Kelime & Cümle Çalışması</h1>
                 <p class="subtitle">150 AWL Kelimesi • Otomatik Bulut Kayıtlı Pratik</p>
@@ -488,7 +528,7 @@
             </header>
 
             <div class="essay-card">
-                <p style="font-size:13px; margin:0;">Tüm cümleleriniz Google Firebase üzerinde e-posta veya Google hesabınızla canlı olarak eşitlenmektedir.</p>
+                <p style="font-size:13px; margin:0;">Tüm cümleleriniz ve program ilerlemeniz Google Firebase üzerinde canlı olarak eşitlenmektedir.</p>
                 <div class="footer-buttons" style="margin-top:15px;">
                     <button class="action-btn export-btn" style="width:100%; text-align:center;" onclick="exportSentences()">📄 Cümlelerimi Metin Olarak İndir</button>
                 </div>
@@ -499,6 +539,59 @@
 </div>
 
 <script>
+const programData = [
+    {
+        week: "1. HAFTA (12-18 AĞUSTOS): TEMEL YAPILAR, BAĞLAÇLAR VE ESSAY YAPISI",
+        days: [
+            { id: "d1", date: "12 Ağu Çarşamba", type: "3 Başlık", tasks: ["Grammar: Conjunctions & Transitions + 25 Soru", "Reading: Read Theory 2 Paragraf Okuma", "Vocabulary: AWL Set 1 (25 Kelime)"] },
+            { id: "d2", date: "13 Ağu Perşembe", type: "2 Başlık", tasks: ["Listening: BBC 6 Min / TED-Ed (2 Dinleme)", "Writing: Opinion Essay Yapısı & Taslak"] },
+            { id: "d3", date: "14 Ağu Cuma", type: "3 Başlık", tasks: ["Grammar: Relative Clauses + 20 Soru", "Reading: 1 Cloze Test + 1 Paragraf", "Vocabulary: AWL Set 2 (20 Yeni Kelime)"] },
+            { id: "d4", date: "15 Ağu Cumartesi", type: "2 Başlık", tasks: ["Listening: Akademik Konuşma + Soru", "Writing: 1 Tam Opinion Essay Yazımı"] },
+            { id: "d5", date: "16 Ağu Pazar", type: "3 Başlık", tasks: ["Grammar: Noun Clauses & Reported Speech", "Reading: C1 Seviye Akademik Metin", "Vocabulary: 1. Hafta Kelime Testi"] },
+            { id: "d6", date: "17 Ağu Pazartesi", type: "2 Başlık", tasks: ["Listening & Reading: TED Talk + Transkript", "Writing: Clause Yapıları ile Self-Editing"] },
+            { id: "d7", date: "18 Ağu Salı", type: "2 Başlık", tasks: ["Deneme: 50 Soruluk Karma Test", "Analiz: Yanlış Soru ve Zayıf Nokta Tespiti"] }
+        ]
+    },
+    {
+        week: "2. HAFTA (19-25 AĞUSTOS): İLERİ SEVIYE GRAMER, İKİ TARAFI SAVUNAN ESSAY VE CLOZE TESTLER",
+        days: [
+            { id: "d8", date: "19 Ağu Çarşamba", type: "3 Başlık", tasks: ["Grammar: Passive Voice & Causatives + 20 Soru", "Reading: Sosyal Bilimler / Tarih 2 Paragraf", "Vocabulary: AWL Set 3 (25 Yeni Kelime)"] },
+            { id: "d9", date: "20 Ağu Perşembe", type: "2 Başlık", tasks: ["Listening: Akademik Lecture + Özet", "Writing: Advantage / Disadvantage Yapısı"] },
+            { id: "d10", date: "21 Ağu Cuma", type: "3 Başlık", tasks: ["Grammar: Conditionals & Wish Clauses", "Reading: 2 Cloze Test + Bağlaç Analizi", "Vocabulary: AWL Set 4 (20 Yeni Kelime)"] },
+            { id: "d11", date: "22 Ağu Cumartesi", type: "2 Başlık", tasks: ["Listening: TOEFL/IELTS Tarzı Parça", "Writing: 1 Tam Adv / Disadv Essay"] },
+            { id: "d12", date: "23 Ağu Pazar", type: "3 Başlık", tasks: ["Grammar: Modal Verbs & Modals in Past", "Reading: Çevre / Doğa Temalı C1 Metin", "Vocabulary: Tüm Kelimelerle Cümle Kurma"] },
+            { id: "d13", date: "24 Ağu Pazartesi", type: "2 Başlık", tasks: ["Listening: Podcast + Ana Fikir Not Alma", "Writing: Modals & Bağlaçlı Essay Taslağı"] },
+            { id: "d14", date: "25 Ağu Salı", type: "2 Başlık", tasks: ["Deneme: İTÜ / Bilkent Örnek Sınavı", "Analiz: Yanlış Soruların Konu Analizi"] }
+        ]
+    },
+    {
+        week: "3. HAFTA (26 AĞUSTOS - 1 EYLÜL): AKADEMIK DERİNLİK, INVERSION VE PROBLEM-SOLUTION",
+        days: [
+            { id: "d15", date: "26 Ağu Çarşamba", type: "3 Başlık", tasks: ["Grammar: Inversion (Devrik Cümleler) + 20 Soru", "Reading: Medipol Tarzı 2 Ağır Metin", "Vocabulary: AWL Set 5 (25 Yeni Kelime)"] },
+            { id: "d16", date: "27 Ağu Perşembe", type: "2 Başlık", tasks: ["Listening: Akademik Sunum + Boşluklar", "Writing: Problem - Solution Yapısı"] },
+            { id: "d17", date: "28 Ağu Cuma", type: "3 Başlık", tasks: ["Grammar: Participle Clauses (Kısaltmalar)", "Reading: Psikoloji / Felsefe 2 Paragraf", "Vocabulary: AWL Set 6 (20 Yeni Kelime)"] },
+            { id: "d18", date: "29 Ağu Cumartesi", type: "2 Başlık", tasks: ["Listening: Detaylı Note-taking + Soru", "Writing: 1 Tam Problem - Solution Essay"] },
+            { id: "d19", date: "30 Ağu Pazar", type: "3 Başlık", tasks: ["Grammar: Prepositions & Restatement Taktikleri", "Reading: Ekonomi / Küreselleşme Metni", "Vocabulary: 3 Haftanın Kelime Kartları"] },
+            { id: "d20", date: "31 Ağu Pazartesi", type: "2 Başlık", tasks: ["Listening & Reading: İleri TED Konuşması", "Writing: Cause - Effect Essay Yapısı & Taslak"] },
+            { id: "d21", date: "01 Eyl Salı", type: "2 Başlık", tasks: ["Deneme: Süreli Tam Reading + Grammar", "Analiz: Hatalı Bağlaç & Gramer Çözümü"] }
+        ]
+    },
+    {
+        week: "4. HAFTA (2-10 EYLÜL): SINAV PROVALARI, HIZLI TEKRARLAR VE BİTİŞ KAMPI",
+        days: [
+            { id: "d22", date: "02 Eyl Çarşamba", type: "3 Başlık", tasks: ["Grammar: Sentence Completion & Karma Test", "Reading: Hızlı Okuma (Skimming/Scanning)", "Vocabulary: Sınavda Çok Çıkan Collocations"] },
+            { id: "d23", date: "03 Eyl Perşembe", type: "2 Başlık", tasks: ["Listening: Doğrudan Soru Çözmeli Listening", "Writing: 1 Tam Cause - Effect Essay"] },
+            { id: "d24", date: "04 Eyl Cuma", type: "3 Başlık", tasks: ["Grammar: Tüm Bağlaçlar Hızlı Tekrar", "Reading: Medipol Örnek Format Birebir", "Vocabulary: Tüm Kelimelerin Taraması"] },
+            { id: "d25", date: "05 Eyl Cumartesi", type: "2 Başlık", tasks: ["Listening: Karışık Aksanlı Dinleme Pratiği", "Writing: 30 Dk Süreli Serbest Essay"] },
+            { id: "d26", date: "06 Eyl Pazar", type: "3 Başlık", tasks: ["Grammar: Sık Yapılan Hatalar Testi", "Reading: Süreli 2 Akademik Paragraf", "Vocabulary: Eş & Zıt Anlamlı Kelimeler"] },
+            { id: "d27", date: "07 Eyl Pazartesi", type: "2 Başlık", tasks: ["Sınav Provası: Tam Süreli Birebir Deneme", "Writing: Sınav Anı Formatında Essay"] },
+            { id: "d28", date: "08 Eyl Salı", type: "2 Başlık", tasks: ["Grammar/Reading: Deneme Çözümleri", "Vocabulary: Unutulan Kelime Kartları"] },
+            { id: "d29", date: "09 Eyl Çarşamba", type: "3 Başlık", tasks: ["Grammar & Vocab: Önemli Bağlaç Tablosu", "Reading: Hafif 1 Kısa Akademik Metin", "Writing: Şablon & Bağlaç Kontrolü"] },
+            { id: "d30", date: "10 Eyl Perşembe", type: "KAMP BİTİŞİ", tasks: ["Genel Prova / Kapanış: Tüm Notların Taraması", "Zihinsel Hazırlık: Sınava Hazır Duruma Gelme"] }
+        ]
+    }
+];
+
 const wordsData = [
     // SET 1
     { set: 1, word: "Analyze (v)", meaning: "Analiz etmek, incelemek", syn: "Examine, Inspect" },
@@ -667,15 +760,10 @@ let currentSetFilter = 'all';
 let hideMeanings = false;
 let selectedEssayWords = [];
 
-function toggleMobileSidebar() {
-    document.getElementById("sidebar").classList.toggle("open");
-}
-
+function toggleMobileSidebar() { document.getElementById("sidebar").classList.toggle("open"); }
 function closeMobileSidebarIfOpen() {
     const sidebar = document.getElementById("sidebar");
-    if (sidebar.classList.contains("open")) {
-        sidebar.classList.remove("open");
-    }
+    if (sidebar.classList.contains("open")) sidebar.classList.remove("open");
 }
 
 function toggleResetCard(showReset) {
@@ -692,6 +780,72 @@ function getUserVal(key) {
     return localStorage.getItem(key) || "";
 }
 
+function renderProgram() {
+    const container = document.getElementById("program-container");
+    container.innerHTML = "";
+
+    let totalDays = 0;
+    let completedDaysCount = 0;
+
+    programData.forEach(weekData => {
+        const weekTitle = document.createElement("div");
+        weekTitle.className = "program-week-title";
+        weekTitle.innerText = weekData.week;
+        container.appendChild(weekTitle);
+
+        weekData.days.forEach(day => {
+            totalDays++;
+            const isCompleted = getUserVal(`prog_day_${day.id}`) === 'true' || getUserVal(`prog_day_${day.id}`) === true;
+            if (isCompleted) completedDaysCount++;
+
+            const card = document.createElement("div");
+            card.className = `program-card ${isCompleted ? 'completed' : ''}`;
+
+            let tasksHTML = "";
+            day.tasks.forEach((task, tIndex) => {
+                const taskKey = `prog_task_${day.id}_${tIndex}`;
+                const isTaskChecked = getUserVal(taskKey) === 'true' || getUserVal(taskKey) === true;
+                tasksHTML += `
+                    <li>
+                        <input type="checkbox" class="program-checkbox" ${isTaskChecked ? 'checked' : ''} onchange="toggleProgramTask('${day.id}', ${tIndex}, this.checked)">
+                        <span style="${isTaskChecked ? 'text-decoration:line-through; opacity:0.7;' : ''}">${task}</span>
+                    </li>
+                `;
+            });
+
+            card.innerHTML = `
+                <div class="program-card-header">
+                    <span class="program-date">${day.date}</span>
+                    <span class="program-badge">${day.type}</span>
+                </div>
+                <ul class="program-tasks">${tasksHTML}</ul>
+            `;
+
+            container.appendChild(card);
+        });
+    });
+
+    const percent = Math.round((completedDaysCount / totalDays) * 100);
+    document.getElementById("programProgressFill").style.width = `${percent}%`;
+    document.getElementById("programProgressText").innerText = `${completedDaysCount} / ${totalDays} Gün Tamamlandı (%${percent})`;
+}
+
+function toggleProgramTask(dayId, tIndex, isChecked) {
+    const taskKey = `prog_task_${dayId}_${tIndex}`;
+    if (window.saveToCloud) window.saveToCloud(taskKey, isChecked);
+
+    const dayData = programData.flatMap(w => w.days).find(d => d.id === dayId);
+    let allChecked = true;
+    dayData.tasks.forEach((t, idx) => {
+        const key = `prog_task_${dayId}_${idx}`;
+        const val = (idx === tIndex) ? isChecked : (getUserVal(key) === 'true' || getUserVal(key) === true);
+        if (!val) allChecked = false;
+    });
+
+    if (window.saveToCloud) window.saveToCloud(`prog_day_${dayId}`, allChecked);
+    renderProgram();
+}
+
 function switchView(viewId, element) {
     document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.sidebar-menu li').forEach(el => el.classList.remove('active'));
@@ -699,6 +853,7 @@ function switchView(viewId, element) {
     element.classList.add('active');
     closeMobileSidebarIfOpen();
 
+    if (viewId === 'program-view') renderProgram();
     if (viewId === 'spaced-view') renderDueWords();
     if (viewId === 'tureng-view') renderTurengQuickLinks();
 }
@@ -710,7 +865,7 @@ function openTureng(word) {
 
 function openTurengDirect() {
     const q = document.getElementById("turengQuery").value.trim();
-    if (q) { window.open(`https://tureng.com/tr/turkce-ingilizce/${encodeURIComponent(q)}`, '_blank'); }
+    if (q) window.open(`https://tureng.com/tr/turkce-ingilizce/${encodeURIComponent(q)}`, '_blank');
 }
 
 function renderTurengQuickLinks() {
