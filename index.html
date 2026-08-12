@@ -63,6 +63,9 @@
             document.getElementById("essayText").value = data.mini_essay;
             handleEssayInput();
         }
+        if (data.listening_notes) {
+            document.getElementById("listeningNotes").value = data.listening_notes;
+        }
       } else {
         window.cloudUserData = {};
       }
@@ -103,11 +106,8 @@
   window.handleAnonymousLogin = async function() {
     const errorBox = document.getElementById("authError");
     errorBox.innerText = "";
-    try {
-      await signInAnonymously(auth);
-    } catch (err) {
-      errorBox.innerText = "Misafir Giriş Hatası: " + err.message;
-    }
+    try { await signInAnonymously(auth); } 
+    catch (err) { errorBox.innerText = "Misafir Giriş Hatası: " + err.message; }
   };
 
   window.handlePasswordReset = async function() {
@@ -294,6 +294,11 @@
     .pick-word-btn { background: var(--input-bg); border: 1px solid var(--border); color: var(--text); padding: 4px 6px; border-radius: 4px; font-size: 11px; cursor: pointer; }
     .pick-word-btn.selected { background: #2563eb; color: white; border-color: #2563eb; }
 
+    /* LISTENING MODULE STİLLERİ */
+    .listening-video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 12px; }
+    .listening-video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+    .listening-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+
     /* PROGRAM TABLOSU STİLLERİ */
     .program-week-title { font-size: 16px; font-weight: bold; color: var(--title-color); margin: 20px 0 10px 0; padding-bottom: 5px; border-bottom: 2px solid var(--border); }
     .program-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
@@ -403,6 +408,7 @@
 
         <ul class="sidebar-menu">
             <li class="active" onclick="switchView('program-view', this)">📅 Çalışma Programı</li>
+            <li onclick="switchView('listening-view', this)">🎧 Podcast & Listening</li>
             <li onclick="switchView('vocab-view', this)">📚 Kelime İstasyonu</li>
             <li onclick="switchView('essay-view', this)">✍️ Mini Essay Sandbox</li>
             <li onclick="switchView('spaced-view', this)">🧠 Akıllı Tekrar (Bugün)</li>
@@ -431,6 +437,32 @@
             </div>
 
             <div id="program-container"></div>
+        </div>
+
+        <!-- PODCAST & LISTENING KÜTÜPHANESİ SEKMESİ -->
+        <div id="listening-view" class="view-section">
+            <header>
+                <h1>🎧 Akademik Dinleme & Note-taking İstasyonu</h1>
+                <p class="subtitle">BBC, TED-Ed ve Akademik Ders İçerikleriyle Dinleme Pratiği Yapın.</p>
+            </header>
+
+            <div class="tabs-container">
+                <button class="tab-btn active" onclick="switchListeningVideo('ted1', this)">TED-Ed: Memory & Mind</button>
+                <button class="tab-btn" onclick="switchListeningVideo('bbc1', this)">BBC 6 Min: Academic English</button>
+                <button class="tab-btn" onclick="switchListeningVideo('lecture1', this)">Akademik Lecture Pratiği</button>
+            </div>
+
+            <div class="listening-grid">
+                <div class="listening-video-container">
+                    <iframe id="listeningIframe" src="https://www.youtube.com/embed/gT46C49Aos4" title="Listening Video" allowfullscreen></iframe>
+                </div>
+
+                <div class="essay-card">
+                    <label style="font-size:13px; font-weight:bold; display:block;">📝 Dinlerken Anlık Not Al (Note-taking Pad):</label>
+                    <textarea class="essay-textarea" id="listeningNotes" style="height:120px;" placeholder="Dinleme parçası sırasında duyduğun önemli bağlaçları, ana fikirleri ve anahtar kelimeleri buraya not al..." oninput="handleListeningNotesInput()"></textarea>
+                    <div style="font-size:11px; color:#10b981; text-align:right;" id="listeningSaveStatus">✓ Buluta Kaydedildi</div>
+                </div>
+            </div>
         </div>
 
         <!-- KELİME İSTASYONU -->
@@ -539,6 +571,26 @@
 </div>
 
 <script>
+const listeningVideos = {
+    ted1: "https://www.youtube.com/embed/gT46C49Aos4",
+    bbc1: "https://www.youtube.com/embed/14eL3K37I34",
+    lecture1: "https://www.youtube.com/embed/9BqI_QfP_iM"
+};
+
+function switchListeningVideo(key, btn) {
+    document.querySelectorAll('#listening-view .tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('listeningIframe').src = listeningVideos[key];
+}
+
+function handleListeningNotesInput() {
+    const text = document.getElementById("listeningNotes").value;
+    if (window.saveToCloud) window.saveToCloud("listening_notes", text);
+    const status = document.getElementById("listeningSaveStatus");
+    status.style.display = "block";
+    setTimeout(() => { status.style.display = "none"; }, 1000);
+}
+
 const programData = [
     {
         week: "1. HAFTA (12-18 AĞUSTOS): TEMEL YAPILAR, BAĞLAÇLAR VE ESSAY YAPISI",
