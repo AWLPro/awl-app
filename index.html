@@ -44,6 +44,7 @@
       renderApp();
       renderWordPicker();
       renderProgram();
+      calculateBadgesAndXP();
     } else {
       window.fbUser = null;
       authModal.style.display = "flex";
@@ -79,6 +80,7 @@
       await setDoc(userDocRef, { [key]: val }, { merge: true });
       if (!window.cloudUserData) window.cloudUserData = {};
       window.cloudUserData[key] = val;
+      calculateBadgesAndXP();
     } catch (e) { console.error(e); }
   };
 
@@ -230,7 +232,35 @@
     .logo-title { font-size: 16px; font-weight: bold; color: #ffffff; letter-spacing: 0.5px; }
     .logo-badge { font-size: 10px; color: #60a5fa; text-transform: uppercase; font-weight: 600; }
 
-    .user-profile-bar { padding: 10px 20px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #94a3b8; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+    /* PROFİL BAR & DROPDOWN */
+    .user-profile-bar {
+        position: relative;
+        padding: 12px 20px;
+        background: rgba(255,255,255,0.05);
+        display: flex; align-items: center; justify-content: space-between;
+        font-size: 12px; color: #94a3b8; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        cursor: pointer;
+    }
+
+    .profile-info-group { display: flex; flex-direction: column; gap: 2px; }
+    .user-level-tag { font-size: 10px; color: #38bdf8; font-weight: bold; }
+
+    .profile-dropdown-menu {
+        display: none;
+        position: absolute;
+        top: 100%; left: 10px; right: 10px;
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        z-index: 1000;
+        padding: 8px 0;
+    }
+
+    .user-profile-bar:hover .profile-dropdown-menu { display: block; }
+    .dropdown-item { padding: 10px 15px; font-size: 12px; color: #cbd5e1; display: flex; align-items: center; gap: 8px; transition: background 0.2s; }
+    .dropdown-item:hover { background: #1e293b; color: #fff; }
+
     .logout-btn { background: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; }
 
     .sidebar-menu { list-style: none; padding: 0; margin: 15px 0 0 0; flex: 1; }
@@ -294,12 +324,20 @@
     .pick-word-btn { background: var(--input-bg); border: 1px solid var(--border); color: var(--text); padding: 4px 6px; border-radius: 4px; font-size: 11px; cursor: pointer; }
     .pick-word-btn.selected { background: #2563eb; color: white; border-color: #2563eb; }
 
-    /* LISTENING MODULE STİLLERİ */
-    .listening-video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 12px; }
+    /* BAŞARIM VE ROZET STİLLERİ */
+    .badge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 15px; }
+    .badge-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 15px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; transition: transform 0.2s, box-shadow 0.2s; }
+    .badge-card.unlocked { border-color: #3b82f6; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15); }
+    .badge-card.locked { opacity: 0.5; filter: grayscale(1); }
+    .badge-icon { font-size: 32px; }
+    .badge-title { font-weight: bold; font-size: 14px; color: var(--title-color); }
+    .badge-desc { font-size: 11px; color: var(--subtitle-color); }
+
+    .listening-video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 8px; background: #000; }
     .listening-video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
     .listening-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .yt-open-btn { background: #cc0000; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 12px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px; width: fit-content; }
 
-    /* PROGRAM TABLOSU STİLLERİ */
     .program-week-title { font-size: 16px; font-weight: bold; color: var(--title-color); margin: 20px 0 10px 0; padding-bottom: 5px; border-bottom: 2px solid var(--border); }
     .program-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
     .program-card.completed { border-left: 5px solid #16a34a; opacity: 0.85; }
@@ -310,7 +348,6 @@
     .program-tasks li { margin-bottom: 6px; display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
     .program-checkbox { margin-top: 2px; width: 16px; height: 16px; cursor: pointer; }
 
-    /* AUTH MODAL */
     .auth-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 15px; box-sizing: border-box; }
     .auth-card { background: var(--card-bg); border: 1px solid var(--border); padding: 25px 20px; border-radius: 12px; width: 100%; max-width: 340px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); text-align: center; box-sizing: border-box; }
     .auth-card h2 { margin-top: 0; color: var(--title-color); font-size: 18px; }
@@ -401,9 +438,19 @@
             </div>
         </div>
 
+        <!-- PROFİL VE AÇILIR MENÜ -->
         <div class="user-profile-bar" id="userProfileBar" style="display:none;">
-            <span id="userEmailDisplay" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;"></span>
-            <button class="logout-btn" onclick="handleLogout()">Çıkış 🚪</button>
+            <div class="profile-info-group">
+                <span id="userEmailDisplay" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px; font-weight:bold; color:#f8fafc;"></span>
+                <span class="user-level-tag" id="userLevelDisplay">Lvl 1 • 0 XP</span>
+            </div>
+            <span style="font-size:10px;">▼</span>
+
+            <!-- DROPDOWN MENU -->
+            <div class="profile-dropdown-menu">
+                <div class="dropdown-item" onclick="switchView('badges-view', this)">🏆 Başarımlar & Rozetler</div>
+                <div class="dropdown-item" style="color:#ef4444;" onclick="handleLogout()">🚪 Çıkış Yap</div>
+            </div>
         </div>
 
         <ul class="sidebar-menu">
@@ -439,6 +486,26 @@
             <div id="program-container"></div>
         </div>
 
+        <!-- BAŞARIMLAR VE ROZETLER SEKMESİ (SADECE PROFİL DROPDOWN ÜZERİNDEN AÇILIR) -->
+        <div id="badges-view" class="view-section">
+            <header>
+                <h1>🏆 Başarımlar & Rozetler</h1>
+                <p class="subtitle">Çalıştıkça XP kazan, seviye atla ve rozet kilitlerini aç!</p>
+            </header>
+
+            <div class="essay-card" style="margin-bottom:15px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h2 style="margin:0; font-size:18px; color:var(--title-color);" id="badgeSectionLevel">Seviye: Lvl 1 Scholar</h2>
+                        <p style="margin:2px 0 0 0; font-size:12px; color:var(--subtitle-color);" id="badgeSectionXP">Toplam XP: 0 XP</p>
+                    </div>
+                    <span style="font-size:36px;">🎖️</span>
+                </div>
+            </div>
+
+            <div class="badge-grid" id="badgeGrid"></div>
+        </div>
+
         <!-- PODCAST & LISTENING KÜTÜPHANESİ SEKMESİ -->
         <div id="listening-view" class="view-section">
             <header>
@@ -447,14 +514,20 @@
             </header>
 
             <div class="tabs-container">
-                <button class="tab-btn active" onclick="switchListeningVideo('ted1', this)">TED-Ed: Memory & Mind</button>
+                <button class="tab-btn active" onclick="switchListeningVideo('ted1', this)">TED-Ed: Language Learning</button>
                 <button class="tab-btn" onclick="switchListeningVideo('bbc1', this)">BBC 6 Min: Academic English</button>
                 <button class="tab-btn" onclick="switchListeningVideo('lecture1', this)">Akademik Lecture Pratiği</button>
             </div>
 
             <div class="listening-grid">
                 <div class="listening-video-container">
-                    <iframe id="listeningIframe" src="https://www.youtube.com/embed/gT46C49Aos4" title="Listening Video" allowfullscreen></iframe>
+                    <iframe id="listeningIframe" src="https://www.youtube-nocookie.com/embed/rxEbDOR5c-M" title="Listening Video" allowfullscreen></iframe>
+                </div>
+
+                <div>
+                    <a id="ytDirectBtn" href="https://www.youtube.com/watch?v=rxEbDOR5c-M" target="_blank" class="yt-open-btn">
+                        ▶️ Videoyu Doğrudan YouTube'da Aç
+                    </a>
                 </div>
 
                 <div class="essay-card">
@@ -571,16 +644,101 @@
 </div>
 
 <script>
+const badgeDefinitions = [
+    { id: "b_first_day", title: "İlk Adım", icon: "🚀", desc: "Çalışma programındaki ilk gününü tamamla." },
+    { id: "b_week_streak", title: "Kararlı Öğrenci", icon: "🔥", desc: "Programda 7 günü başarıyla tamamla." },
+    { id: "b_camp_master", title: "Kamp Şampiyonu", icon: "🎓", desc: "30 günlük Medipol kampının tamamını bitir." },
+    { id: "b_first_sentence", title: "Cümle Mimarı", icon: "✍️", desc: "AWL kelimelerinden birine kendi cümleni yaz." },
+    { id: "b_vocab_star", title: "Favori Avcısı", icon: "⭐", desc: "En az 5 kelimeyi favorilerine ekle." },
+    { id: "b_note_taker", title: "Not Tutucu", icon: "🎧", desc: "Listening bölümünde ilk dinleme notunu kaydet." }
+];
+
+function calculateBadgesAndXP() {
+    let totalXP = 0;
+
+    let completedDaysCount = 0;
+    programData.flatMap(w => w.days).forEach(day => {
+        if (getUserVal(`prog_day_${day.id}`) === 'true' || getUserVal(`prog_day_${day.id}`) === true) {
+            completedDaysCount++;
+            totalXP += 50;
+        }
+    });
+
+    let completedSentencesCount = 0;
+    wordsData.forEach(item => {
+        const text = getUserVal(getKey(item.word));
+        if (text && text.trim() !== "") {
+            completedSentencesCount++;
+            totalXP += 10;
+        }
+    });
+
+    let starredCount = 0;
+    wordsData.forEach(item => {
+        if (isStarred(item.word)) {
+            starredCount++;
+            totalXP += 5;
+        }
+    });
+
+    const notes = getUserVal("listening_notes");
+    let hasNotes = false;
+    if (notes && notes.trim().length > 5) {
+        hasNotes = true;
+        totalXP += 20;
+    }
+
+    let level = Math.floor(totalXP / 100) + 1;
+    document.getElementById("userLevelDisplay").innerText = `Lvl ${level} • ${totalXP} XP`;
+    document.getElementById("badgeSectionLevel").innerText = `Seviye: Lvl ${level} Scholar`;
+    document.getElementById("badgeSectionXP").innerText = `Toplam XP: ${totalXP} XP`;
+
+    const unlockedBadges = {
+        b_first_day: completedDaysCount >= 1,
+        b_week_streak: completedDaysCount >= 7,
+        b_camp_master: completedDaysCount >= 30,
+        b_first_sentence: completedSentencesCount >= 1,
+        b_vocab_star: starredCount >= 5,
+        b_note_taker: hasNotes
+    };
+
+    renderBadges(unlockedBadges);
+}
+
+function renderBadges(unlockedStatus) {
+    const grid = document.getElementById("badgeGrid");
+    if (!grid) return;
+    grid.innerHTML = "";
+
+    badgeDefinitions.forEach(b => {
+        const isUnlocked = unlockedStatus[b.id];
+        const card = document.createElement("div");
+        card.className = `badge-card ${isUnlocked ? 'unlocked' : 'locked'}`;
+
+        card.innerHTML = `
+            <div class="badge-icon">${b.icon}</div>
+            <div class="badge-title">${b.title}</div>
+            <div class="badge-desc">${b.desc}</div>
+            <div style="font-size:10px; font-weight:bold; margin-top:4px; color:${isUnlocked ? '#10b981' : '#ef4444'};">
+                ${isUnlocked ? '✓ KİLİT AÇILDI' : '🔒 KİLİTLİ'}
+            </div>
+        `;
+
+        grid.appendChild(card);
+    });
+}
+
 const listeningVideos = {
-    ted1: "https://www.youtube.com/embed/gT46C49Aos4",
-    bbc1: "https://www.youtube.com/embed/14eL3K37I34",
-    lecture1: "https://www.youtube.com/embed/9BqI_QfP_iM"
+    ted1: { embed: "https://www.youtube-nocookie.com/embed/rxEbDOR5c-M", watch: "https://www.youtube.com/watch?v=rxEbDOR5c-M" },
+    bbc1: { embed: "https://www.youtube-nocookie.com/embed/9ifQ3xRz4hM", watch: "https://www.youtube.com/watch?v=9ifQ3xRz4hM" },
+    lecture1: { embed: "https://www.youtube-nocookie.com/embed/d2gitF9_CS4", watch: "https://www.youtube.com/watch?v=d2gitF9_CS4" }
 };
 
 function switchListeningVideo(key, btn) {
     document.querySelectorAll('#listening-view .tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    document.getElementById('listeningIframe').src = listeningVideos[key];
+    document.getElementById('listeningIframe').src = listeningVideos[key].embed;
+    document.getElementById('ytDirectBtn').href = listeningVideos[key].watch;
 }
 
 function handleListeningNotesInput() {
@@ -746,7 +904,7 @@ const wordsData = [
     { set: 4, word: "Hypothesis (n)", meaning: "Hipotez, varsayım", syn: "Theory, Assumption" },
     { set: 4, word: "Implement (v)", meaning: "Uygulamak, yürürlüğe koymak", syn: "Execute, Apply" },
     { set: 4, word: "Implicate (v)", meaning: "Bulaştırmak, ima etmek", syn: "Involve, Imply" },
-    { set: 4, word: "Impose (v)", meaning: "Zorla kabul ettirmek", syn: "Enforce, Levy" },
+    { set: 5, word: "Impose (v)", meaning: "Zorla kabul ettirmek", syn: "Enforce, Levy" },
     { set: 4, word: "Integrate (v)", meaning: "Entegre etmek, birleştirmek", syn: "Combine, Merge" },
     { set: 4, word: "Internal (adj)", meaning: "İç, dahili", syn: "Inner, Domestic" },
     { set: 4, word: "Investigate (v)", meaning: "Araştırmak, soruşturmak", syn: "Examine, Explore" },
@@ -902,12 +1060,17 @@ function switchView(viewId, element) {
     document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.sidebar-menu li').forEach(el => el.classList.remove('active'));
     document.getElementById(viewId).classList.add('active');
-    element.classList.add('active');
+    
+    if (element && element.classList) {
+        element.classList.add('active');
+    }
+    
     closeMobileSidebarIfOpen();
 
     if (viewId === 'program-view') renderProgram();
     if (viewId === 'spaced-view') renderDueWords();
     if (viewId === 'tureng-view') renderTurengQuickLinks();
+    if (viewId === 'badges-view') calculateBadgesAndXP();
 }
 
 function openTureng(word) {
