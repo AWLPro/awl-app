@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWL Pro Study & Writing Station</title>
+
+<!-- Firebase SDK Modülleri -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+  import { getFirestore, doc, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+  // Sizin Firebase Anahtarlarınız
+  const firebaseConfig = {
+    apiKey: "AIzaSyBVGNvbdvyzi5aBTr_pq-5GpjBGjDu5MVw",
+    authDomain: "medipol-awl-app.firebaseapp.com",
+    projectId: "medipol-awl-app",
+    storageBucket: "medipol-awl-app.firebasestorage.app",
+    messagingSenderId: "974359316898",
+    appId: "1:974359316898:web:fb04a46e5b1df7f318cafb",
+    measurementId: "G-435VVF83QB"
+  };
+
+  // Firebase Başlatma
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const googleProvider = new GoogleAuthProvider();
+
+  window.firebaseAuth = auth;
+  window.firebaseDb = db;
+  window.fbUser = null;
+
+  // Kullanıcı Oturum Durumu Takibi
+  onAuthStateChanged(auth, async (user) => {
+    const authModal = document.getElementById("authModal");
+    const userProfileBar = document.getElementById("userProfileBar");
+    const userEmailDisplay = document.getElementById("userEmailDisplay");
+
+    if (user) {
+      window.fbUser = user;
+      authModal.style.display = "none";
+      userProfileBar.style.display = "flex";
+      userEmailDisplay.innerText = user.displayName || user.email;
+      await loadUserDataFromCloud();
+      renderApp();
+      renderWordPicker();
+    } else {
+      window.fbUser = null;
+      authModal.style.display = "flex";
+      userProfileBar.style.display = "none";
+    }
+  });
+
+  // Buluttan Veri Çekme
+  async function loadUserDataFromCloud() {
+    if (!window.fbUser) return;
+    try {
+      const userDocRef = doc(db, "users", window.fbUser.uid);
+      const docSnap = await getDoc(userDocRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        window.cloudUserData = data;
+        if (data.mini_essay) {
+            document.getElementById("essayText").value = data.mini_essay;
+            handleEssayInput();
+        }
+      } else {
+        window.cloudUserData = {};
+      }
+    } catch (e) {
+      console.error("Veri çekme hatası:", e);
+    }
+  }
+
+  // Buluta Veri Kaydetme
+  window.saveToCloud = async function(key, val) {
+    if (!window.fbUser) return;
+    try {
+      const userDocRef = doc(db, "users", window.fbUser.uid);
+      await setDoc(userDocRef, { [key]: val }, { merge: true });
+      if (!window.cloudUserData) window.cloudUserData = {};
+      window.cloudUserData[key] = val;
+    } catch (e) {
+      console.error("Bulut kayıt hatası:", e);
+    }
+  };
+
+  // E-posta ile Giriş / Kayıt İşlemleri
+  window.handleAuthAction = async function(type) {
+    const email = document.getElementById("authEmail").value.trim();
+    const pass = document.getElementById("authPassword").value.trim();
+    const errorBox = document.getElementById("authError");
+    errorBox.innerText = "";
+
+    if (!email || !pass) {
+      errorBox.innerText = "Lütfen e-posta ve şifrenizi girin.";
+      return;
+    }
+
+    try {
+      if (type === 'login') {
+        await signInWithEmailAndPassword(auth, email, pass);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, pass);
+        alert("Hesabınız başarıyla oluşturuldu! Hoş geldiniz.");
+      }
+    } catch (err) {
+      errorBox.innerText = "Hata: " + err.message;
+    }
+  };
+
+  // Şifre Sıfırlama E-postası Gönderimi
+  window.handlePasswordReset = async function() {
+    const email = document.getElementById("resetEmailInput").value.trim();
+    const msgBox = document.getElementById("resetMsg");
+    msgBox.innerText = "";
+
+    if (!email) {
+      msgBox.style.color = "#ef4444";
+      msgBox.innerText = "Lütfen e-posta adresinizi girin.";
+      return;
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      msgBox.style.color = "#10b981";
+      msgBox.innerText = "Sıfırlama bağlantısı e-postanıza gönderildi!";
+    } catch (err) {
+      msgBox.style.color = "#ef4444";
+      msgBox.innerText = "Hata: " + err.message;
+    }
+  };
+
+  // Google ile Giriş Yap
+  window.handleGoogleLogin = async function() {
+    const errorBox = document.getElementById("authError");
+    errorBox.innerText = "";
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      errorBox.innerText = "Google Giriş Hatası: " + err.message;
+    }
+  };
+
+  window.handleLogout = function() {
+    signOut(auth);
+  };
+</script>
+
+<style>
+    :root {
+        --bg: #f1f5f9;
+        --sidebar-bg: #1e293b;
+        --sidebar-text: #f8fafc;
+        --sidebar-hover: #334155;
+        --sidebar-active: #2563eb;
+        --card-bg: #ffffff;
+        --text: #0f172a;
+        --title-color: #1e3a8a;
+        --subtitle-color: #64748b;
+        --border: #cbd5e1;
+        --input-bg: #ffffff;
+        --input-text: #0f172a;
+        --synonym-color: #0284c7;
+        --progress-bg: #e2e8f0;
+        --progress-fill: #16a34a;
+        --ai-box-bg: #eff6ff;
+        --ai-box-border: #bfdbfe;
+        --ai-box-text: #1e40af;
+    }
+
+    body.dark-mode {
+        --bg: #0f172a;
+        --sidebar-bg: #020617;
+        --sidebar-text: #f8fafc;
+        --sidebar-hover: #1e293b;
+        --sidebar-active: #3b82f6;
+        --card-bg: #1e293b;
+        --text: #f8fafc;
+        --title-color: #60a5fa;
+        --subtitle-color: #94a3b8;
+        --border: #334155;
+        --input-bg: #0f172a;
+        --input-text: #f8fafc;
+        --synonym-color: #38bdf8;
+        --progress-bg: #334155;
+        --progress-fill: #10b981;
+        --ai-box-bg: #1e3a8a;
+        --ai-box-border: #3b82f6;
+        --ai-box-text: #dbeafe;
+    }
+
+    body {
+        font-family: Arial, Helvetica, sans-serif;
+        background-color: var(--bg);
+        color: var(--text);
+        margin: 0;
+        padding: 0;
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+        transition: background-color 0.3s, color 0.3s;
+    }
+
+    /* GİRİŞ MODAL PENCERESİ STİLLERİ */
+    .auth-overlay {
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(15, 23, 42, 0.85);
+        backdrop-filter: blur(8px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }
+
+    .auth-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        padding: 30px;
+        border-radius: 12px;
+        width: 320px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        text-align: center;
+    }
+
+    .auth-card h2 { margin-top: 0; color: var(--title-color); font-size: 20px; }
+    .auth-input {
+        width: 100%; padding: 10px; margin-bottom: 12px;
+        border: 1px solid var(--border); border-radius: 6px;
+        background: var(--input-bg); color: var(--input-text);
+        box-sizing: border-box; font-size: 13px;
+    }
+
+    .auth-btn-group { display: flex; gap: 10px; margin-top: 5px; }
+    .auth-btn {
+        flex: 1; padding: 10px; border: none; border-radius: 6px;
+        font-weight: bold; cursor: pointer; font-size: 13px;
+    }
+    .auth-btn-login { background: #2563eb; color: white; }
+    .auth-btn-register { background: #16a34a; color: white; }
+    
+    .google-btn {
+        width: 100%;
+        background: #ffffff;
+        color: #333333;
+        border: 1px solid #cbd5e1;
+        padding: 10px;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    .google-btn:hover { background: #f8fafc; }
+
+    .auth-divider {
+        display: flex;
+        align-items: center;
+        text-align: center;
+        color: #94a3b8;
+        font-size: 11px;
+        margin: 15px 0;
+    }
+    .auth-divider::before, .auth-divider::after {
+        content: '';
+        flex: 1;
+        border-bottom: 1px solid var(--border);
+    }
+    .auth-divider:not(:empty)::before { margin-right: .5em; }
+    .auth-divider:not(:empty)::after { margin-left: .5em; }
+
+    .forgot-pass-link {
+        display: block;
+        font-size: 11px;
+        color: #3b82f6;
+        text-decoration: none;
+        margin-top: 10px;
+        cursor: pointer;
+    }
+    .forgot-pass-link:hover { text-decoration: underline; }
+
+    .auth-error { color: #ef4444; font-size: 11px; margin-top: 10px; min-height: 15px; }
+
+    /* SOL MENÜ / SIDEBAR */
+    .sidebar {
+        width: 260px;
+        background-color: var(--sidebar-bg);
+        color: var(--sidebar-text);
+        display: flex;
+        flex-direction: column;
+        padding: 20px 0;
+        flex-shrink: 0;
+        transition: all 0.3s;
+    }
+
+    .sidebar-logo-container {
+        padding: 0 20px 15px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .sidebar-logo-icon {
+        width: 38px; height: 38px;
+        background: linear-gradient(135deg, #2563eb, #3b82f6);
+        border-radius: 10px; display: flex; align-items: center;
+        justify-content: center; font-size: 18px;
+        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+    }
+
+    .logo-text-group { display: flex; flex-direction: column; }
+    .logo-title { font-size: 15px; font-weight: bold; color: #ffffff; margin: 0; }
+    .logo-badge { font-size: 10px; color: #60a5fa; text-transform: uppercase; font-weight: 600; }
+
+    .user-profile-bar {
+        padding: 10px 20px;
+        background: rgba(255,255,255,0.05);
+        display: flex; align-items: center; justify-content: space-between;
+        font-size: 11px; color: #94a3b8; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .logout-btn {
+        background: #ef4444; color: white; border: none; padding: 3px 6px;
+        border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: bold;
+    }
+
+    .sidebar-menu { list-style: none; padding: 0; margin: 15px 0 0 0; flex: 1; }
+    .sidebar-menu li {
+        padding: 12px 20px; cursor: pointer; font-size: 13px;
+        display: flex; align-items: center; gap: 10px;
+        transition: background 0.2s; color: #cbd5e1;
+    }
+
+    .sidebar-menu li:hover { background-color: var(--sidebar-hover); color: #fff; }
+    .sidebar-menu li.active { background-color: var(--sidebar-active); color: #fff; font-weight: bold; }
+
+    .sidebar-footer { padding: 15px 20px; border-top: 1px solid rgba(255, 255, 255, 0.1); text-align: center; }
+
+    .theme-toggle-btn {
+        width: 100%; background: #334155; color: #fff; border: none;
+        padding: 8px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold;
+    }
+
+    .main-content { flex: 1; overflow-y: auto; padding: 30px; }
+    .view-section { display: none; max-width: 900px; margin: 0 auto; }
+    .view-section.active { display: block; }
+
+    header { margin-bottom: 20px; }
+    h1 { color: var(--title-color); margin: 0 0 5px 0; font-size: 22px; }
+    p.subtitle { color: var(--subtitle-color); margin: 0; font-size: 13px; }
+
+    .controls-grid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .search-box { flex: 1; min-width: 200px; }
+    .search-box input {
+        width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+        border-radius: 6px; background-color: var(--input-bg);
+        color: var(--input-text); box-sizing: border-box;
+    }
+
+    .action-btn {
+        background-color: var(--card-bg); color: var(--text);
+        border: 1px solid var(--border); padding: 8px 12px;
+        border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;
+    }
+
+    .tureng-btn {
+        background-color: #b91c1c; color: #ffffff; border: none;
+        padding: 4px 8px; border-radius: 4px; font-size: 11px;
+        font-weight: bold; cursor: pointer; text-decoration: none;
+        display: inline-flex; align-items: center; gap: 4px;
+    }
+
+    .progress-bar-container {
+        width: 100%; background-color: var(--progress-bg); border-radius: 8px;
+        height: 18px; margin-bottom: 15px; overflow: hidden; position: relative;
+    }
+
+    .progress-bar-fill { background-color: var(--progress-fill); height: 100%; width: 0%; transition: width 0.4s ease; }
+    .progress-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 11px; font-weight: bold; color: #ffffff; text-shadow: 0 0 3px rgba(0,0,0,0.7); }
+
+    .tabs-container { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px; }
+    .tab-btn { background-color: var(--card-bg); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; }
+    .tab-btn.active { background-color: #2563eb; color: #ffffff; border-color: #2563eb; }
+
+    .word-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .word-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 5px; }
+    .word-title-group { display: flex; align-items: center; gap: 8px; }
+    .word-title { font-weight: bold; color: var(--title-color); font-size: 15px; }
+    .star-btn, .audio-btn { background: none; border: none; cursor: pointer; font-size: 16px; padding: 0; }
+    .word-meaning { color: var(--text); font-size: 13px; opacity: 0.9; }
+    .word-meaning.hidden-content { filter: blur(4px); user-select: none; }
+    .word-meaning.hidden-content:hover { filter: none; }
+    .synonym { color: var(--synonym-color); font-size: 12px; font-weight: bold; }
+
+    textarea {
+        width: 100%; height: 45px; padding: 8px; background-color: var(--input-bg);
+        color: var(--input-text); border: 1px solid var(--border); border-radius: 6px;
+        font-family: inherit; font-size: 13px; resize: vertical; box-sizing: border-box;
+    }
+
+    .card-footer-controls { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; flex-wrap: wrap; gap: 8px; }
+    .spaced-rep-buttons { display: flex; gap: 6px; align-items: center; font-size: 11px; }
+    .srs-btn { padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border); cursor: pointer; font-size: 11px; font-weight: bold; }
+    .srs-hard { background-color: #fef2f2; color: #dc2626; border-color: #fca5a5; }
+    .srs-medium { background-color: #fefce8; color: #ca8a04; border-color: #fef08a; }
+    .srs-easy { background-color: #f0fdf4; color: #16a34a; border-color: #86efac; }
+
+    .ai-check-btn { background-color: #8b5cf6; color: white; border: none; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; }
+    .ai-feedback-box { display: none; background-color: var(--ai-box-bg); border: 1px solid var(--ai-box-border); color: var(--ai-box-text); padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-top: 6px; line-height: 1.4; }
+    .saved-status { font-size: 11px; color: #10b981; text-align: right; display: none; }
+
+    .essay-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+    .essay-textarea { height: 220px; font-size: 14px; line-height: 1.6; }
+    .essay-stats { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; }
+    .word-picker-container { display: flex; flex-wrap: wrap; gap: 6px; max-height: 100px; overflow-y: auto; border: 1px solid var(--border); padding: 8px; border-radius: 6px; }
+    .pick-word-btn { background: var(--input-bg); border: 1px solid var(--border); color: var(--text); padding: 3px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+    .pick-word-btn.selected { background: #2563eb; color: white; border-color: #2563eb; }
+
+    .footer-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+    .export-btn { background-color: #16a34a; color: white; border: none; }
+</style>
+</head>
+<body>
+
+<!-- GİRİŞ / KAYIT MODALI (FIREBASE & GOOGLE) -->
+<div class="auth-overlay" id="authModal">
+    <!-- ANA GİRİŞ KARTI -->
+    <div class="auth-card" id="mainAuthCard">
+        <h2>Medipol AWL Giriş</h2>
+        <p style="font-size:12px; color:#64748b; margin-top:-5px; margin-bottom:15px;">Bulut senkronizasyonu için oturum açın.</p>
+        
+        <button class="google-btn" onclick="handleGoogleLogin()">
+            <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+            Google ile Giriş Yap
+        </button>
+
+        <div class="auth-divider">veya e-posta ile</div>
+
+        <input type="email" id="authEmail" class="auth-input" placeholder="E-posta Adresiniz">
+        <input type="password" id="authPassword" class="auth-input" placeholder="Şifreniz">
+        <div class="auth-btn-group">
+            <button class="auth-btn auth-btn-login" onclick="handleAuthAction('login')">Giriş Yap</button>
+            <button class="auth-btn auth-btn-register" onclick="handleAuthAction('register')">Kayıt Ol</button>
+        </div>
+        
+        <a class="forgot-pass-link" onclick="toggleResetCard(true)">Şifremi Unuttum?</a>
+        <div class="auth-error" id="authError"></div>
+    </div>
+
+    <!-- ŞİFRE SIFIRLAMA KARTI -->
+    <div class="auth-card" id="resetAuthCard" style="display:none;">
+        <h2>Şifremi Unuttum</h2>
+        <p style="font-size:12px; color:#64748b; margin-top:-5px; margin-bottom:15px;">E-posta adresinizi girin, sıfırlama bağlantısı gönderelim.</p>
+        
+        <input type="email" id="resetEmailInput" class="auth-input" placeholder="E-posta Adresiniz">
+        
+        <button class="auth-btn auth-btn-login" style="width:100%; margin-bottom:10px;" onclick="handlePasswordReset()">Sıfırlama Bağlantısı Gönder</button>
+        
+        <a class="forgot-pass-link" onclick="toggleResetCard(false)">← Giriş Ekrana Dön</a>
+        <div class="auth-error" id="resetMsg"></div>
+    </div>
+</div>
+
+<!-- SOL MENÜ (SIDEBAR) -->
+<div class="sidebar">
+    <div class="sidebar-logo-container">
+        <div class="sidebar-logo-icon">🎓</div>
+        <div class="logo-text-group">
+            <span class="logo-title">Medipol AWL</span>
+            <span class="logo-badge">Cloud Pro Station</span>
+        </div>
+    </div>
+
+    <!-- AKTİF KULLANICI BİLGİSİ -->
+    <div class="user-profile-bar" id="userProfileBar" style="display:none;">
+        <span id="userEmailDisplay" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px;"></span>
+        <button class="logout-btn" onclick="handleLogout()">Çıkış 🚪</button>
+    </div>
+
+    <ul class="sidebar-menu">
+        <li class="active" onclick="switchView('vocab-view', this)">📚 Kelime İstasyonu</li>
+        <li onclick="switchView('essay-view', this)">✍️ Mini Essay Sandbox</li>
+        <li onclick="switchView('spaced-view', this)">🧠 Akıllı Tekrar (Bugün)</li>
+        <li onclick="switchView('tureng-view', this)">🇹🇷 Tureng Sözlük</li>
+        <li onclick="switchView('settings-view', this)">⚙️ Ayarlar & Araçlar</li>
+    </ul>
+    
+    <div class="sidebar-footer">
+        <button class="theme-toggle-btn" id="themeBtn" onclick="toggleTheme()">🌙 Koyu Tema</button>
+    </div>
+</div>
+
+<!-- ANA İÇERİK ALANI -->
+<div class="main-content">
+
+    <!-- KELİME İSTASYONU -->
+    <div id="vocab-view" class="view-section active">
+        <header>
+            <h1>Akademik Kelime & Cümle Çalışması</h1>
+            <p class="subtitle">150 AWL Kelimesi • Otomatik Bulut Kayıtlı Pratik</p>
+        </header>
+
+        <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="progressFill"></div>
+            <div class="progress-text" id="progressText">0 / 150 Cümle Tamamlandı (%0)</div>
+        </div>
+
+        <div class="controls-grid">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Kelime veya Türkçe anlam ara..." oninput="filterWords()">
+            </div>
+            <button class="action-btn" onclick="toggleHideMeanings()">👁️ Anlamları Gizle/Göster</button>
+            <button class="action-btn" onclick="showRandomWord()">🎲 Rastgele Kelime Getir</button>
+        </div>
+
+        <div class="tabs-container">
+            <button class="tab-btn active" onclick="switchSetTab('all', this)">Tümü (150)</button>
+            <button class="tab-btn" onclick="switchSetTab('starred', this)">⭐ Favoriler</button>
+            <button class="tab-btn" onclick="switchSetTab(1, this)">Set 1</button>
+            <button class="tab-btn" onclick="switchSetTab(2, this)">Set 2</button>
+            <button class="tab-btn" onclick="switchSetTab(3, this)">Set 3</button>
+            <button class="tab-btn" onclick="switchSetTab(4, this)">Set 4</button>
+            <button class="tab-btn" onclick="switchSetTab(5, this)">Set 5</button>
+            <button class="tab-btn" onclick="switchSetTab(6, this)">Set 6</button>
+        </div>
+
+        <div id="practice-container"></div>
+    </div>
+
+    <!-- MINI ESSAY SANDBOX -->
+    <div id="essay-view" class="view-section">
+        <header>
+            <h1>✍️ 150 Kelimelik Mini Essay Sandbox</h1>
+            <p class="subtitle">Seçtiğin AWL kelimelerini kullanarak bütüncül bir paragraf/essay taslağı oluştur.</p>
+        </header>
+
+        <div class="essay-card">
+            <div>
+                <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:6px;">Paragrafında Kullanmak İstediğin AWL Kelimelerini Seç:</label>
+                <div class="word-picker-container" id="wordPicker"></div>
+            </div>
+
+            <textarea class="essay-textarea" id="essayText" placeholder="Hedeflediğin 150 kelimelik akademik paragrafını veya mini essay taslağını buraya yaz..." oninput="handleEssayInput()"></textarea>
+
+            <div class="essay-stats">
+                <span id="essayWordCount">Kelime Sayısı: 0 / 150</span>
+                <button class="action-btn ai-check-btn" onclick="aiCheckEssay()">🤖 Yapay Zekâ Essay Analizi</button>
+            </div>
+
+            <div class="ai-feedback-box" id="essayAiBox"></div>
+        </div>
+    </div>
+
+    <!-- AKILLI TEKRAR -->
+    <div id="spaced-view" class="view-section">
+        <header>
+            <h1>🧠 Akıllı Tekrar (Unutma Eğrisi)</h1>
+            <p class="subtitle">Bugün tekrar etmen gereken kelimeler burada listelenir.</p>
+        </header>
+
+        <div id="due-container"></div>
+    </div>
+
+    <!-- TURENG SÖZLÜK -->
+    <div id="tureng-view" class="view-section">
+        <header>
+            <h1>🇹🇷 Tureng Sözlük Arama İstasyonu</h1>
+            <p class="subtitle">Kelimenin akademik karşılıklarına, deyimsel kullanımlarına ve telaffuzlarına Tureng'de bak.</p>
+        </header>
+
+        <div class="essay-card" style="text-align:center;">
+            <h3 style="margin-top:0;">Hızlı Tureng Araması Yap</h3>
+            <div style="display:flex; gap:10px; max-width:500px; margin:15px auto;">
+                <input type="text" id="turengQuery" style="flex:1; padding:10px; border:1px solid var(--border); border-radius:6px; background:var(--input-bg); color:var(--input-text);" placeholder="Örn: analyze, evaluate, constraint...">
+                <button class="action-btn" style="background:#b91c1c; color:white; border:none;" onclick="openTurengDirect()">🇹🇷 Tureng'de Ara</button>
+            </div>
+            <hr style="border:0; border-top:1px solid var(--border); margin:20px 0;">
+            <h4>Eş Anlamlı ve Detaylı Akademik Karşılıklar İçin Hazır Kısayollar:</h4>
+            <div id="turengQuickLinks" style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center; max-height:200px; overflow-y:auto; padding:10px;"></div>
+        </div>
+    </div>
+
+    <!-- AYARLAR & ARAÇLAR -->
+    <div id="settings-view" class="view-section">
+        <header>
+            <h1>⚙️ Ayarlar & Veri Yönetimi</h1>
+            <p class="subtitle">Çalışma verilerini indir veya cihaz durumunu kontrol et.</p>
+        </header>
+
+        <div class="essay-card">
+            <p style="font-size:13px; margin:0;">Tüm cümleleriniz Google Firebase üzerinde e-posta veya Google hesabınızla canlı olarak eşitlenmektedir.</p>
+            <div class="footer-buttons">
+                <button class="action-btn export-btn" onclick="exportSentences()">📄 Cümlelerimi Metin Olarak İndir</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+const wordsData = [
+    // SET 1
+    { set: 1, word: "Analyze (v)", meaning: "Analiz etmek, incelemek", syn: "Examine, Inspect" },
+    { set: 1, word: "Approach (n/v)", meaning: "Yaklaşım; yaklaşmak", syn: "Method, Strategy" },
+    { set: 1, word: "Assess (v)", meaning: "Değerlendirmek", syn: "Evaluate, Estimate" },
+    { set: 1, word: "Assume (v)", meaning: "Varsaymak, farz etmek", syn: "Suppose, Presume" },
+    { set: 1, word: "Authority (n)", meaning: "Otorite, yetki, uzman", syn: "Power, Expert" },
+    { set: 1, word: "Benefit (n/v)", meaning: "Fayda, yarar", syn: "Advantage, Profit" },
+    { set: 1, word: "Concept (n)", meaning: "Kavram, fikir", syn: "Idea, Notion" },
+    { set: 1, word: "Consist of (v)", meaning: "-den oluşmak", syn: "Be composed of" },
+    { set: 1, word: "Constituent (n/adj)", meaning: "Bileşen, kurucu öğe", syn: "Component, Element" },
+    { set: 1, word: "Context (n)", meaning: "Bağlam, ortam", syn: "Background, Situation" },
+    { set: 1, word: "Contract (n/v)", meaning: "Sözleşme; küçülmek", syn: "Agreement, Shrink" },
+    { set: 1, word: "Create (v)", meaning: "Oluşturmak, yaratmak", syn: "Produce, Generate" },
+    { set: 1, word: "Data (n)", meaning: "Veri, bilgi", syn: "Information, Facts" },
+    { set: 1, word: "Define (v)", meaning: "Tanımlamak", syn: "Explain, Describe" },
+    { set: 1, word: "Derive (from) (v)", meaning: "-den türetmek", syn: "Obtain, Get" },
+    { set: 1, word: "Distribute (v)", meaning: "Dağıtmak", syn: "Hand out, Spread" },
+    { set: 1, word: "Economy (n)", meaning: "Ekonomi, iktisat", syn: "Financial system" },
+    { set: 1, word: "Environment (n)", meaning: "Çevre, ortam", syn: "Surroundings, Habitat" },
+    { set: 1, word: "Establish (v)", meaning: "Kurmak, tesis etmek", syn: "Set up, Found" },
+    { set: 1, word: "Estimate (v/n)", meaning: "Tahmin etmek", syn: "Guess, Calculate" },
+    { set: 1, word: "Evident (adj)", meaning: "Açık, aşikar, belli", syn: "Obvious, Clear" },
+    { set: 1, word: "Export (v/n)", meaning: "İhraç etmek; ihracat", syn: "Sell abroad" },
+    { set: 1, word: "Factor (n)", meaning: "Faktör, etken", syn: "Element, Cause" },
+    { set: 1, word: "Financial (adj)", meaning: "Finansal, mali", syn: "Economic, Monetary" },
+    { set: 1, word: "Formula (n)", meaning: "Formül, yöntem", syn: "Method, Recipe" },
+
+    // SET 2
+    { set: 2, word: "Achieve (v)", meaning: "Başarmak, elde etmek", syn: "Accomplish, Attain" },
+    { set: 2, word: "Acquire (v)", meaning: "Edinmek, kazanmak", syn: "Obtain, Gain" },
+    { set: 2, word: "Administration (n)", meaning: "Yönetim, idare", syn: "Management, Executive" },
+    { set: 2, word: "Affect (v)", meaning: "Etkilemek", syn: "Influence, Impact" },
+    { set: 2, word: "Appropriate (adj)", meaning: "Uygun, elverişli", syn: "Suitable, Proper" },
+    { set: 2, word: "Aspect (n)", meaning: "Açı, yön, bakım", syn: "Feature, Side" },
+    { set: 2, word: "Assist (v)", meaning: "Yardım etmek", syn: "Help, Aid" },
+    { set: 2, word: "Category (n)", meaning: "Kategori, sınıf", syn: "Group, Class" },
+    { set: 2, word: "Chapter (n)", meaning: "Bölüm (kitap vb.)", syn: "Section, Part" },
+    { set: 2, word: "Commission (n/v)", meaning: "Komisyon; görevlendirmek", syn: "Committee, Order" },
+    { set: 2, word: "Community (n)", meaning: "Topluluk, halk", syn: "Society, Public" },
+    { set: 2, word: "Complex (adj)", meaning: "Karmaşık, zor", syn: "Complicated, Intricate" },
+    { set: 2, word: "Compute (v)", meaning: "Hesaplamak", syn: "Calculate, Reckon" },
+    { set: 2, word: "Conclude (v)", meaning: "Sonuçlandırmak, bitirmek", syn: "Finish, Infer" },
+    { set: 2, word: "Conduct (v/n)", meaning: "Yürütmek; davranış", syn: "Carry out, Behavior" },
+    { set: 2, word: "Consequence (n)", meaning: "Sonuç, netice", syn: "Result, Outcome" },
+    { set: 2, word: "Construct (v)", meaning: "İnşa etmek, kurmak", syn: "Build, Erect" },
+    { set: 2, word: "Consume (v)", meaning: "Tüketmek", syn: "Use up, Eat/Drink" },
+    { set: 2, word: "Credit (n/v)", meaning: "Kredi, övgü; inanmak", syn: "Praise, Belief" },
+    { set: 2, word: "Culture (n)", meaning: "Kültür, medeniyet", syn: "Customs, Lifestyle" },
+    { set: 2, word: "Design (n/v)", meaning: "Tasarım; tasarlamak", syn: "Plan, Draft" },
+    { set: 2, word: "Distinct (adj)", meaning: "Ayrık, farklı, belirgin", syn: "Different, Clear" },
+    { set: 2, word: "Element (n)", meaning: "Öğe, unsur", syn: "Component, Factor" },
+    { set: 2, word: "Evaluate (v)", meaning: "Değerlendirmek", syn: "Assess, Judge" },
+    { set: 2, word: "Feature (n/v)", meaning: "Özellik; yer vermek", syn: "Characteristic, Highlight" },
+
+    // SET 3
+    { set: 3, word: "Alternative (n/adj)", meaning: "Alternatif, seçenek", syn: "Option, Substitute" },
+    { set: 3, word: "Circumstance (n)", meaning: "Durum, koşul", syn: "Situation, Condition" },
+    { set: 3, word: "Comment (n/v)", meaning: "Yorum; yorum yapmak", syn: "Remark, State" },
+    { set: 3, word: "Compensate (v)", meaning: "Telafi etmek", syn: "Make up for, Pay" },
+    { set: 3, word: "Component (n)", meaning: "Bileşen, parça", syn: "Element, Part" },
+    { set: 3, word: "Consent (n/v)", meaning: "Rıza, onay; onaylamak", syn: "Agreement, Permission" },
+    { set: 3, word: "Considerable (adj)", meaning: "Önemli, kayda değer", syn: "Significant, Substantial" },
+    { set: 3, word: "Constant (adj)", meaning: "Sürekli, sabit", syn: "Continuous, Unchanging" },
+    { set: 3, word: "Constrain (v)", meaning: "Kısıtlamak, zorlamak", syn: "Restrict, Limit" },
+    { set: 3, word: "Contribute (v)", meaning: "Katkıda bulunmak", syn: "Donate, Add to" },
+    { set: 3, word: "Convenient (adj)", meaning: "Uygun, elverişli", syn: "Suitable, Handy" },
+    { set: 3, word: "Core (n/adj)", meaning: "Çekirdek, temel", syn: "Center, Essential" },
+    { set: 3, word: "Corporate (adj)", meaning: "Kurumsal, şirkete ait", syn: "Business, Company" },
+    { set: 3, word: "Criteria (n)", meaning: "Kriterler, ölçütler", syn: "Standards, Measures" },
+    { set: 3, word: "Deduce (v)", meaning: "Sonuç çıkarmak", syn: "Infer, Conclude" },
+    { set: 3, word: "Demonstrate (v)", meaning: "Kanıtlamak, göstermek", syn: "Show, Prove" },
+    { set: 3, word: "Dominant (adj)", meaning: "Baskın, egemen", syn: "Main, Powerful" },
+    { set: 3, word: "Ensure (v)", meaning: "Garantiye almak, sağlamak", syn: "Make sure, Guarantee" },
+    { set: 3, word: "Exclude (v)", meaning: "Hariç tutmak, dışlamak", syn: "Leave out, Rule out" },
+    { set: 3, word: "Framework (n)", meaning: "Çerçeve, yapı", syn: "Structure, System" },
+    { set: 3, word: "Illustrate (v)", meaning: "Örneklendirmek, çizmek", syn: "Exemplify, Show" },
+    { set: 3, word: "Impact (n/v)", meaning: "Etki; etkilemek", syn: "Effect, Influence" },
+    { set: 3, word: "Initial (adj)", meaning: "İlk, başlangıçtaki", syn: "First, Beginning" },
+    { set: 3, word: "Instance (n)", meaning: "Örnek, durum", syn: "Example, Case" },
+    { set: 3, word: "Interact (v)", meaning: "Etkileşime girmek", syn: "Communicate, Connect" },
+
+    // SET 4
+    { set: 4, word: "Access (n/v)", meaning: "Erişim; erişmek", syn: "Entry, Reach" },
+    { set: 4, word: "Adequate (adj)", meaning: "Yeterli, kafi", syn: "Sufficient, Enough" },
+    { set: 4, word: "Apparent (adj)", meaning: "Açık, belirgin", syn: "Obvious, Evident" },
+    { set: 4, word: "Attitude (n)", meaning: "Tutum, tavır", syn: "Manner, Approach" },
+    { set: 4, word: "Attribute (v/n)", meaning: "Atfetmek; özellik", syn: "Ascribe, Trait" },
+    { set: 4, word: "Civil (adj)", meaning: "Sivil, medeni", syn: "Public, Polite" },
+    { set: 4, word: "Code (n/v)", meaning: "Kod, kural", syn: "System, Rules" },
+    { set: 4, word: "Commit (v)", meaning: "Taahhüt etmek, işlemek", syn: "Pledge, Perform" },
+    { set: 4, word: "Concentrate (v)", meaning: "Odaklanmak", syn: "Focus, Direct" },
+    { set: 4, word: "Confer (v)", meaning: "Danışmak, vermek", syn: "Consult, Grant" },
+    { set: 4, word: "Contrast (n/v)", meaning: "Zıtlık; karşılaştırmak", syn: "Difference, Compare" },
+    { set: 4, word: "Domestic (adj)", meaning: "Yerli, evcil, ailevi", syn: "Internal, Local" },
+    { set: 4, word: "Emergence (n)", meaning: "Ortaya çıkış", syn: "Appearance, Rise" },
+    { set: 4, word: "Ethnic (adj)", meaning: "Etnik, ırksal", syn: "Racial, Cultural" },
+    { set: 4, word: "Goal (n)", meaning: "Hedef, amaç", syn: "Aim, Objective" },
+    { set: 4, word: "Grant (v/n)", meaning: "Vermek, bağışlamak; hibe", syn: "Give, Award" },
+    { set: 4, word: "Hypothesis (n)", meaning: "Hipotez, varsayım", syn: "Theory, Assumption" },
+    { set: 4, word: "Implement (v)", meaning: "Uygulamak, yürürlüğe koymak", syn: "Execute, Apply" },
+    { set: 4, word: "Implicate (v)", meaning: "Bulaştırmak, ima etmek", syn: "Involve, Imply" },
+    { set: 4, word: "Impose (v)", meaning: "Zorla kabul ettirmek", syn: "Enforce, Levy" },
+    { set: 4, word: "Integrate (v)", meaning: "Entegre etmek, birleştirmek", syn: "Combine, Merge" },
+    { set: 4, word: "Internal (adj)", meaning: "İç, dahili", syn: "Inner, Domestic" },
+    { set: 4, word: "Investigate (v)", meaning: "Araştırmak, soruşturmak", syn: "Examine, Explore" },
+    { set: 4, word: "Job (n)", meaning: "İş, meslek", syn: "Task, Occupation" },
+    { set: 4, word: "Label (n/v)", meaning: "Etiket; etiketlemek", syn: "Tag, Mark" },
+
+    // SET 5
+    { set: 5, word: "Academic (adj)", meaning: "Akademik, bilimsel", syn: "Scholarly, Educational" },
+    { set: 5, word: "Adjustment (n)", meaning: "Ayarlama, uyum", syn: "Adaptation, Modification" },
+    { set: 5, word: "Alter (v)", meaning: "Değiştirmek", syn: "Change, Modify" },
+    { set: 5, word: "Awareness (n)", meaning: "Farkındalık, bilinç", syn: "Consciousness, Knowledge" },
+    { set: 5, word: "Capacity (n)", meaning: "Kapasite, hacim", syn: "Volume, Ability" },
+    { set: 5, word: "Challenge (n/v)", meaning: "Zorluk; meydan okumak", syn: "Difficulty, Test" },
+    { set: 5, word: "Clause (n)", meaning: "Madde (yasa), cümlecik", syn: "Section, Phrase" },
+    { set: 5, word: "Compound (n/adj)", meaning: "Bileşik, karışım", syn: "Mixture, Combination" },
+    { set: 5, word: "Conflict (n/v)", meaning: "Çatışma; anlaşamamak", syn: "Clash, Dispute" },
+    { set: 5, word: "Consult (v)", meaning: "Danışmak, başvurmak", syn: "Ask, Seek advice" },
+    { set: 5, word: "Decline (v/n)", meaning: "Reddetmek, düşmek; düşüş", syn: "Decrease, Refuse" },
+    { set: 5, word: "Discretion (n)", meaning: "Takdir yetkisi, gizlilik", syn: "Choice, Prudence" },
+    { set: 5, word: "Draft (n/v)", meaning: "Taslak; taslak hazırlamak", syn: "Outline, Sketch" },
+    { set: 5, word: "Enable (v)", meaning: "Olanak sağlamak", syn: "Allow, Permit" },
+    { set: 5, word: "Enforce (v)", meaning: "Uygulamak, zorlamak", syn: "Impose, Execute" },
+    { set: 5, word: "Entity (n)", meaning: "Varlık, birim", syn: "Unit, Being" },
+    { set: 5, word: "Equivalent (adj/n)", meaning: "Eşdeğer, denk", syn: "Equal, Comparable" },
+    { set: 5, word: "Evolve (v)", meaning: "Evrimleşmek, gelişmek", syn: "Develop, Progress" },
+    { set: 5, word: "Expand (v)", meaning: "Genişlemek, büyümek", syn: "Enlarge, Extend" },
+    { set: 5, word: "Expose (v)", meaning: "Maruz bırakmak, ifşa etmek", syn: "Uncover, Reveal" },
+    { set: 5, word: "External (adj)", meaning: "Dış, harici", syn: "Outer, Outside" },
+    { set: 5, word: "Facilitate (v)", meaning: "Kolaylaştırmak", syn: "Ease, Assist" },
+    { set: 5, word: "Fundamental (adj)", meaning: "Temel, esas", syn: "Basic, Essential" },
+    { set: 5, word: "Generate (v)", meaning: "Üretmek, oluşturmak", syn: "Produce, Create" },
+    { set: 5, word: "Generation (n)", meaning: "Nesil, kuşak", syn: "Age group, Era" },
+
+    // SET 6
+    { set: 6, word: "Abstract (adj/n)", meaning: "Soyut; özet", syn: "Theoretical, Summary" },
+    { set: 6, word: "Accurate (adj)", meaning: "Doğru, kesin", syn: "Correct, Precise" },
+    { set: 6, word: "Acknowledge (v)", meaning: "Kabul etmek, onaylamak", syn: "Admit, Accept" },
+    { set: 6, word: "Aggregate (adj/n)", meaning: "Toplam, bir araya gelmiş", syn: "Total, Combined" },
+    { set: 6, word: "Allocate (v)", meaning: "Tahsis etmek, ayırmak", syn: "Assign, Apportion" },
+    { set: 6, word: "Author (n/v)", meaning: "Yazar; yazmak", syn: "Writer, Creator" },
+    { set: 6, word: "Bond (n/v)", meaning: "Bağ; bağlanmak", syn: "Connection, Link" },
+    { set: 6, word: "Brief (adj)", meaning: "Kısa, öz", syn: "Short, Concise" },
+    { set: 6, word: "Capable (adj)", meaning: "Yetenekli, muktedir", syn: "Able, Competent" },
+    { set: 6, word: "Cite (v)", meaning: "Alıntı yapmak, bahsetmek", syn: "Quote, Mention" },
+    { set: 6, word: "Cooperate (v)", meaning: "İşbirliği yapmak", syn: "Collaborate, Work together" },
+    { set: 6, word: "Discriminate (v)", meaning: "Ayrımcılık yapmak, ayırt etmek", syn: "Differentiate, Bias" },
+    { set: 6, word: "Display (v/n)", meaning: "Sergilemek; gösterge", syn: "Show, Exhibit" },
+    { set: 6, word: "Diverse (adj)", meaning: "Çeşitli, farklı", syn: "Various, Varied" },
+    { set: 6, word: "Domain (n)", meaning: "Alan, alan adı", syn: "Field, Territory" },
+    { set: 6, word: "Edit (v)", meaning: "Düzenlemek, editlemek", syn: "Revise, Correct" },
+    { set: 6, word: "Enhance (v)", meaning: "Geliştirmek, artırmak", syn: "Improve, Boost" },
+    { set: 6, word: "Exceed (v)", meaning: "Aşmak, geçmek", syn: "Surpass, Go beyond" },
+    { set: 6, word: "Expert (n/adj)", meaning: "Uzman, usta", syn: "Specialist, Professional" },
+    { set: 6, word: "Explicit (adj)", meaning: "Açık, net, belirgin", syn: "Clear, Direct" },
+    { set: 6, word: "Federal (adj)", meaning: "Federal, birleşik", syn: "National, Central" },
+    { set: 6, word: "Fee (n)", meaning: "Ücret, harç", syn: "Charge, Payment" },
+    { set: 6, word: "Flexibility (n)", meaning: "Esneklik", syn: "Adaptability, Elasticity" },
+    { set: 6, word: "Furthermore (adv)", meaning: "Ayrıca, dahası", syn: "Moreover, In addition" },
+    { set: 6, word: "Gender (n)", meaning: "Cinsiyet", syn: "Sex" }
+];
+
+let currentSetFilter = 'all';
+let hideMeanings = false;
+let selectedEssayWords = [];
+
+function toggleResetCard(showReset) {
+    document.getElementById("mainAuthCard").style.display = showReset ? "none" : "block";
+    document.getElementById("resetAuthCard").style.display = showReset ? "block" : "none";
+}
+
+function getKey(word) {
+    return `awl_sentence_${word.split(' ')[0].toLowerCase().replace(/[^a-z]/g, '')}`;
+}
+
+function getUserVal(key) {
+    if (window.cloudUserData && window.cloudUserData[key] !== undefined) {
+        return window.cloudUserData[key];
+    }
+    return localStorage.getItem(key) || "";
+}
+
+function switchView(viewId, element) {
+    document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.sidebar-menu li').forEach(el => el.classList.remove('active'));
+    document.getElementById(viewId).classList.add('active');
+    element.classList.add('active');
+
+    if (viewId === 'spaced-view') renderDueWords();
+    if (viewId === 'tureng-view') renderTurengQuickLinks();
+}
+
+function openTureng(word) {
+    const cleanWord = word.split(' ')[0].toLowerCase().replace(/[^a-z]/g, '');
+    window.open(`https://tureng.com/tr/turkce-ingilizce/${cleanWord}`, '_blank');
+}
+
+function openTurengDirect() {
+    const q = document.getElementById("turengQuery").value.trim();
+    if (q) {
+        window.open(`https://tureng.com/tr/turkce-ingilizce/${encodeURIComponent(q)}`, '_blank');
+    }
+}
+
+function renderTurengQuickLinks() {
+    const container = document.getElementById("turengQuickLinks");
+    container.innerHTML = "";
+    wordsData.forEach(item => {
+        const clean = item.word.split(' ')[0];
+        const btn = document.createElement("button");
+        btn.className = "pick-word-btn";
+        btn.innerHTML = `🇹🇷 ${clean}`;
+        btn.onclick = () => openTureng(clean);
+        container.appendChild(btn);
+    });
+}
+
+function renderApp() {
+    const container = document.getElementById("practice-container");
+    container.innerHTML = "";
+
+    const searchQuery = document.getElementById("searchInput").value.toLowerCase();
+
+    let filteredWords = wordsData.filter(item => {
+        const matchesFilter = (currentSetFilter === 'all') || 
+                              (currentSetFilter === 'starred' && isStarred(item.word)) || 
+                              (item.set === currentSetFilter);
+        const matchesSearch = item.word.toLowerCase().includes(searchQuery) || 
+                              item.meaning.toLowerCase().includes(searchQuery) ||
+                              item.syn.toLowerCase().includes(searchQuery);
+        return matchesFilter && matchesSearch;
+    });
+
+    if (filteredWords.length === 0) {
+        container.innerHTML = `<div style="text-align:center; padding:30px; opacity:0.7;">Aranan kriterlere uygun kelime bulunamadı.</div>`;
+        updateProgressBar();
+        return;
+    }
+
+    filteredWords.forEach((item) => {
+        const storageKey = getKey(item.word);
+        const savedText = getUserVal(storageKey);
+        const starred = isStarred(item.word);
+
+        const card = document.createElement("div");
+        card.className = "word-card";
+
+        card.innerHTML = `
+            <div class="word-header">
+                <div class="word-title-group">
+                    <button class="star-btn" onclick="toggleStar('${item.word}')">${starred ? '⭐' : '☆'}</button>
+                    <span class="word-title">${item.word} <small style="opacity:0.6; font-size:11px;">(Set ${item.set})</small></span>
+                    <button class="audio-btn" onclick="speakWord('${item.word.split(' ')[0]}')">🔊</button>
+                    <button class="tureng-btn" onclick="openTureng('${item.word}')">🇹🇷 Tureng'de Bak</button>
+                </div>
+                <span class="synonym">Eş Anlamlı: ${item.syn}</span>
+            </div>
+            <div class="word-meaning ${hideMeanings ? 'hidden-content' : ''}"><b>Anlamı:</b> ${item.meaning}</div>
+            <textarea placeholder="Bu kelimeyle ilgili kendi cümleni buraya yaz..." oninput="saveSentence('${storageKey}', this)">${savedText}</textarea>
+            
+            <div class="card-footer-controls">
+                <div class="spaced-rep-buttons">
+                    <span>Unutma Eğrisi:</span>
+                    <button class="srs-btn srs-hard" onclick="setSpacedRepetition('${item.word}', 1)">🔴 Zor</button>
+                    <button class="srs-btn srs-medium" onclick="setSpacedRepetition('${item.word}', 3)">🟡 Orta</button>
+                    <button class="srs-btn srs-easy" onclick="setSpacedRepetition('${item.word}', 7)">🟢 Kolay</button>
+                </div>
+                <button class="ai-check-btn" onclick="aiCheckSentence('${item.word}', '${storageKey}')">🤖 AI Kontrol</button>
+            </div>
+            
+            <div class="ai-feedback-box" id="ai-box-${storageKey}"></div>
+            <div class="saved-status" id="status-${storageKey}">✓ Kaydedildi</div>
+        `;
+
+        container.appendChild(card);
+    });
+
+    updateProgressBar();
+}
+
+function renderDueWords() {
+    const container = document.getElementById("due-container");
+    container.innerHTML = "";
+    const today = new Date().getTime();
+
+    let dueWords = wordsData.filter(item => {
+        const nextReview = parseInt(getUserVal(`srs_next_${item.word}`)) || 0;
+        return nextReview > 0 && today >= nextReview;
+    });
+
+    if (dueWords.length === 0) {
+        container.innerHTML = `<div style="text-align:center; padding:30px; opacity:0.7;">🎉 Harika! Bugün tekrar etmen gereken hiç kelime kalmadı.</div>`;
+        return;
+    }
+
+    dueWords.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "word-card";
+        card.innerHTML = `
+            <div class="word-header">
+                <span class="word-title">${item.word}</span>
+                <span class="synonym">${item.syn}</span>
+            </div>
+            <div class="word-meaning"><b>Anlamı:</b> ${item.meaning}</div>
+            <div class="spaced-rep-buttons" style="margin-top:8px;">
+                <button class="srs-btn srs-hard" onclick="setSpacedRepetition('${item.word}', 1); renderDueWords();">🔴 Zor (Yarın)</button>
+                <button class="srs-btn srs-easy" onclick="setSpacedRepetition('${item.word}', 7); renderDueWords();">🟢 Öğrendim (7 Gün)</button>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function renderWordPicker() {
+    const picker = document.getElementById("wordPicker");
+    picker.innerHTML = "";
+    wordsData.forEach(item => {
+        const clean = item.word.split(' ')[0];
+        const btn = document.createElement("button");
+        btn.className = `pick-word-btn ${selectedEssayWords.includes(clean) ? 'selected' : ''}`;
+        btn.innerText = clean;
+        btn.onclick = () => {
+            if (selectedEssayWords.includes(clean)) {
+                selectedEssayWords = selectedEssayWords.filter(w => w !== clean);
+            } else {
+                selectedEssayWords.push(clean);
+            }
+            renderWordPicker();
+        };
+        picker.appendChild(btn);
+    });
+}
+
+function handleEssayInput() {
+    const text = document.getElementById("essayText").value;
+    if (window.saveToCloud) window.saveToCloud("mini_essay", text);
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    document.getElementById("essayWordCount").innerText = `Kelime Sayısı: ${words} / 150`;
+}
+
+function aiCheckEssay() {
+    const text = document.getElementById("essayText").value;
+    const box = document.getElementById("essayAiBox");
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+
+    if (words < 20) {
+        box.style.display = "block";
+        box.innerHTML = "<b>🤖 AI Feedback:</b> Lütfen analizi başlatmak için en az 20-30 kelimelik bir metin yazın.";
+        return;
+    }
+
+    let feedback = [];
+    feedback.push(`📊 <b>Toplam Kelime Sayısı:</b> ${words} kelime.`);
+
+    let usedWords = [];
+    selectedEssayWords.forEach(w => {
+        if (text.toLowerCase().includes(w.toLowerCase())) {
+            usedWords.push(w);
+        }
+    });
+
+    if (usedWords.length > 0) {
+        feedback.push(`✅ <b>Kullanılan Hedef Kelimeler:</b> ${usedWords.join(', ')}`);
+    } else if (selectedEssayWords.length > 0) {
+        feedback.push(`⚠️ Seçtiğin hedef kelimeler henüz paragrafta geçmiyor.`);
+    }
+
+    const connectors = ["however", "therefore", "although", "furthermore", "in addition", "because", "despite"];
+    let foundConnectors = connectors.filter(c => text.toLowerCase().includes(c));
+    if (foundConnectors.length > 0) {
+        feedback.push(`🔗 <b>Harika Bağlaç Kullanımı:</b> ${foundConnectors.join(', ')}`);
+    } else {
+        feedback.push("💡 Metinine 'however, therefore, although' gibi akademik bağlaçlar ekleyerek akıcılığı artırabilirsin.");
+    }
+
+    box.style.display = "block";
+    box.innerHTML = `<b>🤖 Yapay Zekâ Essay Analizi:</b><br>` + feedback.join("<br>");
+}
+
+function aiCheckSentence(word, storageKey) {
+    const text = getUserVal(storageKey);
+    const box = document.getElementById(`ai-box-${storageKey}`);
+    const cleanWord = word.split(' ')[0].toLowerCase().replace(/[^a-z]/g, '');
+
+    if (!text || text.trim().length < 5) {
+        box.style.display = "block";
+        box.innerHTML = "<b>🤖 AI Feedback:</b> Lütfen kontrol etmeden önce tam bir İngilizce cümle yazın.";
+        return;
+    }
+
+    const lowerText = text.toLowerCase();
+    let feedback = [];
+
+    if (!lowerText.includes(cleanWord)) {
+        feedback.push(`⚠️ Hedef kelimen olan <b>"${cleanWord}"</b> cümlenin içinde geçmiyor.`);
+    } else {
+        feedback.push(`✅ <b>"${cleanWord}"</b> kelimesini cümlende kullandın.`);
+    }
+
+    if (!/^[A-Z]/.test(text.trim())) feedback.push("💡 Cümleye büyük harfle başlamalısın.");
+    if (!/[.!?]$/.test(text.trim())) feedback.push("💡 Cümlenin sonuna nokta (.) koymalısın.");
+
+    box.style.display = "block";
+    box.innerHTML = `<b>🤖 Yapay Zekâ Analizi:</b><br>` + feedback.join("<br>");
+}
+
+function setSpacedRepetition(word, days) {
+    const nextReviewDate = new Date().getTime() + (days * 24 * 60 * 60 * 1000);
+    if (window.saveToCloud) window.saveToCloud(`srs_next_${word}`, nextReviewDate);
+    alert(`"${word.split(' ')[0]}" unutma eğrisine eklendi! ${days} gün sonra tekrar listene düşecek.`);
+}
+
+function updateProgressBar() {
+    let completedCount = 0;
+    wordsData.forEach(item => {
+        const text = getUserVal(getKey(item.word));
+        if (text && text.trim() !== "") completedCount++;
+    });
+
+    const percent = Math.round((completedCount / wordsData.length) * 100);
+    document.getElementById("progressFill").style.width = `${percent}%`;
+    document.getElementById("progressText").innerText = `${completedCount} / ${wordsData.length} Cümle Tamamlandı (%${percent})`;
+}
+
+function saveSentence(storageKey, textarea) {
+    if (window.saveToCloud) window.saveToCloud(storageKey, textarea.value);
+    updateProgressBar();
+    const status = document.getElementById(`status-${storageKey}`);
+    if (status) {
+        status.style.display = "block";
+        setTimeout(() => { status.style.display = "none"; }, 800);
+    }
+}
+
+function speakWord(text) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    window.speechSynthesis.speak(utterance);
+}
+
+function isStarred(word) {
+    return getUserVal(`starred_${word}`) === 'true' || getUserVal(`starred_${word}`) === true;
+}
+
+function toggleStar(word) {
+    const current = isStarred(word);
+    if (window.saveToCloud) window.saveToCloud(`starred_${word}`, !current);
+    renderApp();
+}
+
+function filterWords() { renderApp(); }
+
+function switchSetTab(filter, btn) {
+    currentSetFilter = filter;
+    document.querySelectorAll('.tabs-container .tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderApp();
+}
+
+function toggleHideMeanings() {
+    hideMeanings = !hideMeanings;
+    renderApp();
+}
+
+function showRandomWord() {
+    const randomIndex = Math.floor(Math.random() * wordsData.length);
+    document.getElementById("searchInput").value = wordsData[randomIndex].word.split(' ')[0];
+    filterWords();
+}
+
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+    const isDark = document.body.classList.contains("dark-mode");
+    document.getElementById("themeBtn").innerText = isDark ? "☀️ Aydınlık Tema" : "🌙 Koyu Tema";
+    localStorage.setItem("app_theme", isDark ? "dark" : "light");
+}
+
+function exportSentences() {
+    let content = "=== AWL KENDİ CÜMLELERİM VE AKADEMİK NOTLARIM ===\n\n";
+    let count = 0;
+
+    wordsData.forEach(item => {
+        const sentence = getUserVal(getKey(item.word));
+        if (sentence && sentence.trim() !== "") {
+            count++;
+            content += `${count}. ${item.word} (${item.meaning})\n   Cümlem: ${sentence}\n\n`;
+        }
+    });
+
+    if (count === 0) { alert("Henüz hiç cümle yazmamışsın!"); return; }
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'AWL_Akademik_Cumlelerim.txt';
+    a.click();
+}
+
+if (localStorage.getItem("app_theme") === "dark") {
+    document.body.classList.add("dark-mode");
+    document.getElementById("themeBtn").innerText = "☀️ Aydınlık Tema";
+}
+</script>
+
+</body>
+</html>
