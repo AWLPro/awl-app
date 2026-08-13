@@ -580,9 +580,12 @@
             </header>
 
             <div class="essay-card">
-                <h3>1. Profil Fotoğrafı Yükle</h3>
+                <h3>1. Profil Fotoğrafı Yükle & Düzenle</h3>
                 <img id="profileAvatarPreview" class="profile-avatar-preview" src="favicon.png" alt="Önizleme">
-                <input type="file" id="avatarFileInput" accept="image/*" class="auth-input" onchange="handleCustomAvatarUpload(event)">
+                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+                    <input type="file" id="avatarFileInput" accept="image/*" class="auth-input" style="flex:1;" onchange="handleCustomAvatarUpload(event)">
+                    <button class="action-btn" style="background:#ef4444; color:white; border:none; padding:8px 12px;" onclick="removeCustomAvatar()">🗑️ Fotoğrafı Kaldır</button>
+                </div>
 
                 <hr style="border:0; border-top:1px solid var(--border); margin:15px 0;">
 
@@ -781,16 +784,33 @@ const badgeDefinitions = [
     { id: "b_note_taker", title: "Not Tutucu", icon: "🎧", desc: "Listening bölümünde ilk dinleme notunu kaydet." }
 ];
 
+// OTOMATİK RESİM SIKIŞTIRMA (COMPRESS) FONKSİYONU
 function handleCustomAvatarUpload(event) {
     const file = event.target.files[0];
     if (file) {
         const reader = new FileReader();
         reader.onload = function(e) {
-            customAvatarBase64 = e.target.result;
-            document.getElementById("profileAvatarPreview").src = customAvatarBase64;
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = 150;
+                canvas.height = 150;
+                ctx.drawImage(img, 0, 0, 150, 150);
+                customAvatarBase64 = canvas.toDataURL('image/jpeg', 0.8);
+                document.getElementById("profileAvatarPreview").src = customAvatarBase64;
+            };
+            img.src = e.target.result;
         };
         reader.readAsDataURL(file);
     }
+}
+
+// PROFİL FOTOĞRAFINI KALDIRMA / VARSAYILANA DÖNDÜRME
+function removeCustomAvatar() {
+    customAvatarBase64 = 'favicon.png';
+    document.getElementById("profileAvatarPreview").src = 'favicon.png';
+    document.getElementById("avatarFileInput").value = '';
 }
 
 function updateProfileUI() {
@@ -1468,7 +1488,7 @@ function aiCheckSentence(word, storageKey) {
     let feedback = [];
 
     if (!lowerText.includes(cleanWord)) { feedback.push(`⚠️ Hedef kelimen olan <b>"${cleanWord}"</b> cümlenin içinde geçmiyor.`); } 
-    else { feedback.push(`✅ <b>"${cleanWord}"</b> kelimesini cümlende kullandın.`); }
+    else { feedback.push(`✅ <b>"${cleanWord}"</b> kelimesini cümlendi kullandın.`); }
 
     if (!/^[A-Z]/.test(text.trim())) feedback.push("💡 Cümleye büyük harfle başlamalısın.");
     if (!/[.!?]$/.test(text.trim())) feedback.push("💡 Cümlenin sonuna nokta (.) koymalısın.");
