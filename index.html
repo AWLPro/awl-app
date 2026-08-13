@@ -64,6 +64,7 @@
       renderDashboard();
       renderGrammarLab();
       listenNotifications();
+      listenVoiceLounge();
       
       const currentHash = window.location.hash.replace('#', '');
       const savedView = currentHash || localStorage.getItem('last_active_view') || 'dashboard-view';
@@ -109,7 +110,108 @@
     } catch (e) { console.error(e); }
   };
 
-  // BİLDİRİM GÖNDERME
+  // SESLİ ÇALIŞMA ODASI (VOICE LOUNGE) ALTYAPISI
+  window.localVoiceStream = null;
+  window.isMuted = false;
+  window.isInVoiceRoom = false;
+
+  window.joinVoiceRoom = async function() {
+    if (!window.fbUser) {
+      alert("Ses odasına katılmak için giriş yapmalısınız.");
+      return;
+    }
+
+    try {
+      window.localVoiceStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      window.isInVoiceRoom = true;
+
+      const name = getUserVal('profile_name') || window.fbUser.displayName || 'Öğrenci';
+      const avatar = getUserVal('profile_avatar') || 'favicon.png';
+
+      await setDoc(doc(db, "voiceLounge", window.fbUser.uid), {
+        uid: window.fbUser.uid,
+        name: name,
+        avatar: avatar,
+        isMuted: false,
+        joinedAt: serverTimestamp()
+      });
+
+      document.getElementById("voiceJoinBtn").style.display = "none";
+      document.getElementById("voiceMuteBtn").style.display = "inline-block";
+      document.getElementById("voiceLeaveBtn").style.display = "inline-block";
+      document.getElementById("voiceStatusBadge").innerHTML = "🟢 Odadasın (Ses Bağlantısı Aktif)";
+      document.getElementById("voiceStatusBadge").style.background = "#dcfce7";
+      document.getElementById("voiceStatusBadge").style.color = "#15803d";
+
+    } catch (e) {
+      alert("Mikrofon izni verilmedi veya cihaz bulunamadı: " + e.message);
+    }
+  };
+
+  window.toggleMuteVoice = async function() {
+    if (!window.localVoiceStream) return;
+    window.isMuted = !window.isMuted;
+    window.localVoiceStream.getAudioTracks()[0].enabled = !window.isMuted;
+
+    const btn = document.getElementById("voiceMuteBtn");
+    btn.innerText = window.isMuted ? "🎙️ Sesi Aç" : "🔇 Sesi Kapat";
+    btn.style.background = window.isMuted ? "#ef4444" : "var(--card-bg)";
+    btn.style.color = window.isMuted ? "#ffffff" : "var(--text)";
+
+    await updateDoc(doc(db, "voiceLounge", window.fbUser.uid), { isMuted: window.isMuted });
+  };
+
+  window.leaveVoiceRoom = async function() {
+    if (window.localVoiceStream) {
+      window.localVoiceStream.getTracks().forEach(track => track.stop());
+      window.localVoiceStream = null;
+    }
+    window.isInVoiceRoom = false;
+
+    if (window.fbUser) {
+      await deleteDoc(doc(db, "voiceLounge", window.fbUser.uid));
+    }
+
+    document.getElementById("voiceJoinBtn").style.display = "inline-block";
+    document.getElementById("voiceMuteBtn").style.display = "none";
+    document.getElementById("voiceLeaveBtn").style.display = "none";
+    document.getElementById("voiceStatusBadge").innerHTML = "🔴 Odada Değilsin";
+    document.getElementById("voiceStatusBadge").style.background = "#fee2e2";
+    document.getElementById("voiceStatusBadge").style.color = "#991b1b";
+  };
+
+  window.listenVoiceLounge = function() {
+    const grid = document.getElementById("voiceUserGrid");
+    if (!grid) return;
+
+    onSnapshot(collection(db, "voiceLounge"), (snap) => {
+      if (snap.empty) {
+        grid.innerHTML = "<p style='font-size:12px; opacity:0.7; grid-column: 1/-1; text-align:center;'>Şu an ses odasında kimse yok. İlk katılan sen ol!</p>";
+        return;
+      }
+
+      grid.innerHTML = "";
+      snap.forEach(docSnap => {
+        const u = docSnap.data();
+        const userCard = document.createElement("div");
+        userCard.className = "essay-card";
+        userCard.style.textAlign = "center";
+        userCard.style.padding = "12px";
+
+        const borderStyle = u.isMuted ? "2px solid #ef4444" : "3px solid #16a34a";
+
+        userCard.innerHTML = `
+          <img src="${u.avatar || 'favicon.png'}" style="width:50px; height:50px; border-radius:50%; object-fit:cover; border:${borderStyle}; margin:0 auto 6px auto; display:block;">
+          <strong style="font-size:12px; display:block; color:var(--title-color);">${u.name}</strong>
+          <span style="font-size:10px; color:${u.isMuted ? '#ef4444' : '#16a34a'}; font-weight:bold;">
+            ${u.isMuted ? '🔇 Sessiz' : '🎙️ Konuşuyor'}
+          </span>
+        `;
+        grid.appendChild(userCard);
+      });
+    });
+  };
+
   window.sendNotification = async function(targetUid, title, message, linkPostId = null) {
     if (!targetUid || targetUid === window.fbUser.uid) return;
     try {
@@ -123,7 +225,6 @@
     } catch (e) { console.error("Bildirim gönderilemedi:", e); }
   };
 
-  // BİLDİRİMLERİ CANLI DİNLEME
   let unsubNotifs = null;
   window.listenNotifications = function() {
     if (!window.fbUser) return;
@@ -184,7 +285,6 @@
     if (modal) modal.style.display = show ? "flex" : "none";
   };
 
-  // FORUM GÖNDERİSİ PAYLAŞMA
   window.createForumPost = async function() {
     if (!window.fbUser || window.fbUser.isAnonymous) {
       alert("Forumda paylaşım yapmak için e-posta veya Google ile giriş yapmalısınız.");
@@ -226,7 +326,6 @@
     }
   };
 
-  // TAKİP ET / TAKİPTEN ÇIK (FOLLOW / UNFOLLOW + BİLDİRİM)
   window.toggleFollowUser = async function(targetUid) {
     if (!window.fbUser || window.fbUser.isAnonymous) {
       alert("Kullanıcıları takip etmek için giriş yapmalısınız.");
@@ -258,7 +357,6 @@
     }
   };
 
-  // BOOKMARK (GÖNDERİ KAYDETME)
   window.toggleBookmarkPost = async function(postId) {
     if (!window.fbUser || window.fbUser.isAnonymous) {
       alert("Gönderileri kaydetmek için giriş yapmalısınız.");
@@ -281,7 +379,6 @@
     }
   };
 
-  // KULLANICI PROFİL KARTINI AÇMA (MODAL)
   window.openUserProfileModal = async function(uid) {
     const modal = document.getElementById("userProfileModal");
     const container = document.getElementById("userProfileModalContent");
@@ -371,7 +468,6 @@
     document.getElementById("userProfileModal").style.display = "none";
   };
 
-  // GÖNDERİ SİLME
   window.deletePost = async function(postId) {
     if (!confirm("Bu gönderiyi silmek istediğinize emin misiniz?")) return;
     try {
@@ -382,7 +478,6 @@
     }
   };
 
-  // GÖNDERİ BİLDİR / RAPOR ET
   window.reportPost = async function(postId) {
     if (!window.fbUser) return;
     try {
@@ -397,14 +492,12 @@
     }
   };
 
-  // GÖNDERİ BAĞLANTISINI PAYLAŞ
   window.sharePost = function(postId) {
     const postUrl = window.location.origin + window.location.pathname + "#forum-view";
     navigator.clipboard.writeText(postUrl);
     alert("Forum bağlantısı panoya kopyalandı!");
   };
 
-  // CANLI FORUM DİNLEYİCİSİ
   let unsubscribePosts = null;
   window.listenForumPosts = async function() {
     const feed = document.getElementById("forumFeed");
@@ -480,14 +573,14 @@
     const isOwner = window.fbUser && (window.fbUser.uid === post.authorUid);
 
     postCard.innerHTML = `
-      <div style="display:flex; gap:12px; align-items:flex-start;">
+      <div class="forum-post-container" style="display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap;">
         <div style="display:flex; flex-direction:column; align-items:center; background:rgba(0,0,0,0.05); padding:6px 8px; border-radius:8px;">
           <button class="action-btn" style="padding:2px 8px; font-size:14px;" onclick="votePost('${postId}', 1)">▲</button>
           <span style="font-size:12px; font-weight:bold; margin:4px 0;" id="vote-score-${postId}">${voteCount}</span>
           <button class="action-btn" style="padding:2px 8px; font-size:14px;" onclick="votePost('${postId}', -1)">▼</button>
         </div>
 
-        <div style="flex:1;">
+        <div style="flex:1; min-width:220px;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
             <div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="openUserProfileModal('${post.authorUid}')">
               <img src="${post.authorAvatar || 'favicon.png'}" class="profile-avatar-img" alt="Avatar">
@@ -496,7 +589,7 @@
                 <span class="program-badge" style="margin-left:6px;">${post.category || 'Genel'}</span>
               </div>
             </div>
-            <div style="display:flex; gap:6px;">
+            <div style="display:flex; gap:4px; flex-wrap:wrap;">
               <button class="action-btn" style="padding:2px 6px; font-size:11px;" onclick="toggleBookmarkPost('${postId}')">🔖 Kaydet</button>
               <button class="action-btn" style="padding:2px 6px; font-size:11px;" onclick="sharePost('${postId}')">🔗 Paylaş</button>
               <button class="action-btn" style="padding:2px 6px; font-size:11px; color:#eab308;" onclick="reportPost('${postId}')">🚨 Bildir</button>
@@ -505,7 +598,7 @@
           </div>
 
           <h3 style="margin:8px 0 4px 0; font-size:16px; color:var(--title-color);">${post.title}</h3>
-          <p style="margin:0 0 10px 0; font-size:13px; line-height:1.5; opacity:0.9; white-space:pre-wrap;">${post.content}</p>
+          <p style="margin:0 0 10px 0; font-size:13px; line-height:1.5; opacity:0.9; white-space:pre-wrap; word-break:break-word;">${post.content}</p>
 
           <div style="display:flex; gap:10px; align-items:center;">
             <button class="action-btn" style="font-size:11px;" onclick="toggleComments('${postId}', '${post.authorUid}', '${post.bestCommentId || ''}')">💬 ${commentCount} Yorum</button>
@@ -516,8 +609,8 @@
               <p style="font-size:11px; opacity:0.7;">Yorumlar yükleniyor...</p>
             </div>
 
-            <div style="display:flex; gap:6px;">
-              <input type="text" id="comment-input-${postId}" class="auth-input" style="margin:0; font-size:12px;" placeholder="@kullanıcı şeklinde etiketleyip yorum yazın...">
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <input type="text" id="comment-input-${postId}" class="auth-input" style="margin:0; font-size:12px; flex:1; min-width:150px;" placeholder="@kullanıcı şeklinde etiketleyip yorum yazın...">
               <button class="action-btn" style="background:#2563eb; color:white; border:none; padding:6px 12px; white-space:nowrap;" onclick="addComment('${postId}', '${post.authorUid}')">Gönder</button>
             </div>
           </div>
@@ -585,7 +678,6 @@
     }
   };
 
-  // CANLI YORUM DİNLEYİCİSİ (@MENTION VE BİLDİRİM DESTEKLİ)
   const commentUnsubscribers = {};
   window.listenComments = function(postId, postAuthorUid, bestCommentId) {
     const list = document.getElementById(`comments-list-${postId}`);
@@ -617,7 +709,7 @@
         cBox.style.fontSize = "12px";
 
         cBox.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:4px;">
             <div style="display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="openUserProfileModal('${c.authorUid}')">
               <img src="${c.authorAvatar || 'favicon.png'}" style="width:18px; height:18px; border-radius:50%; object-fit:cover;">
               <strong style="font-size:11px; text-decoration:underline;">${c.authorName || 'Kullanıcı'}</strong>
@@ -628,7 +720,7 @@
               ${isCommentOwner ? `<button class="action-btn" style="padding:1px 4px; font-size:10px; color:#ef4444;" onclick="deleteComment('${postId}', '${commentId}')">🗑️</button>` : ''}
             </div>
           </div>
-          <p style="margin:0; opacity:0.9; line-height:1.3;">${formattedText}</p>
+          <p style="margin:0; opacity:0.9; line-height:1.3; word-break:break-word;">${formattedText}</p>
         `;
         list.appendChild(cBox);
       });
@@ -655,7 +747,6 @@
     }
   };
 
-  // YORUM EKLEME + BİLDİRİM VE @MENTION TETİKLEYİCİSİ
   window.addComment = async function(postId, postAuthorUid) {
     if (!window.fbUser || window.fbUser.isAnonymous) {
       alert("Yorum yapmak için e-posta veya Google ile giriş yapmalısınız.");
@@ -682,7 +773,6 @@
       const postRef = doc(db, "posts", postId);
       await updateDoc(postRef, { commentCount: increment(1) });
 
-      // GÖNDERİ SAHİBİNE YORUM BİLDİRİMİ GÖNDERME
       sendNotification(postAuthorUid, "💬 Yeni Yorum!", `${authorName} gönderine yorum yaptı.`, postId);
 
       input.value = "";
@@ -1044,14 +1134,15 @@
     .profile-avatar-img { width: 34px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); background-size: cover; background-position: center; display: block; }
     .profile-avatar-preview { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #2563eb; display: block; margin: 10px 0; background-size: cover; background-position: center; }
 
-    /* DASHBOARD GRID CSS */
-    .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    /* DASHBOARD GRID CSS (MOBİL UYUMLU GÜÇLENDİRİLDİ) */
+    .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 20px; }
     .dash-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; cursor: pointer; }
     .dash-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); }
     .dash-icon { font-size: 28px; margin-bottom: 8px; }
     .dash-title { font-size: 15px; font-weight: bold; color: var(--title-color); margin-bottom: 4px; }
     .dash-desc { font-size: 12px; color: var(--subtitle-color); line-height: 1.4; margin-bottom: 12px; }
 
+    /* TELEFON / MOBİL UYUMLULUK DÜZELTMELERİ */
     @media (max-width: 768px) {
         .mobile-header { display: flex; }
         .app-container { height: calc(100vh - 48px); }
@@ -1063,6 +1154,8 @@
         .card-footer-controls { flex-direction: column; align-items: stretch; gap: 10px; }
         .spaced-rep-buttons { justify-content: space-between; width: 100%; }
         .ai-check-btn { width: 100%; text-align: center; }
+        .dashboard-grid { grid-template-columns: 1fr; }
+        .forum-post-container { flex-direction: column; }
     }
 </style>
 </head>
@@ -1178,6 +1271,7 @@
             <li class="active" onclick="switchView('dashboard-view', this)">🏠 Ana Sayfa</li>
             <li onclick="switchView('program-view', this)">📅 Çalışma Programı</li>
             <li onclick="switchView('grammar-view', this)">🧩 Grammar Lab</li>
+            <li onclick="switchView('voice-view', this)">🔊 Sesli Oda</li>
             <li onclick="switchView('listening-view', this)">🎧 Podcast & Listening</li>
             <li onclick="switchView('vocab-view', this)">📚 Kelime İstasyonu</li>
             <li onclick="switchView('essay-view', this)">✍️ Mini Essay Sandbox</li>
@@ -1245,13 +1339,13 @@
                     <button class="action-btn" style="background:#eab308; color:white; border:none;">Laboratuvara Gir →</button>
                 </div>
 
-                <div class="dash-card" onclick="switchView('spaced-view', null)">
+                <div class="dash-card" onclick="switchView('voice-view', null)">
                     <div>
-                        <div class="dash-icon">🧠</div>
-                        <div class="dash-title">Akıllı Tekrar (S.R.S)</div>
-                        <div class="dash-desc">Unutma eğrisine göre bugün tekrar etmen gereken kelimeler.</div>
+                        <div class="dash-icon">🔊</div>
+                        <div class="dash-title">Sesli Çalışma Odası</div>
+                        <div class="dash-desc">Canlı sesli odaya bağlan, diğer öğrencilerle sesli çalış.</div>
                     </div>
-                    <button class="action-btn" style="background:#16a34a; color:white; border:none;">Tekrarlara Başla →</button>
+                    <button class="action-btn" style="background:#16a34a; color:white; border:none;">Odaya Gir →</button>
                 </div>
 
                 <div class="dash-card" onclick="switchView('forum-view', null)">
@@ -1263,6 +1357,29 @@
                     <button class="action-btn" style="background:#0284c7; color:white; border:none;">Foruma Göz At →</button>
                 </div>
             </div>
+        </div>
+
+        <!-- 🔊 SESLİ ODALAR (VOICE LOUNGE) SEKMESİ -->
+        <div id="voice-view" class="view-section">
+            <header>
+                <h1>🔊 Sesli Çalışma Odası (Study Lounge)</h1>
+                <p class="subtitle">Arkadaşlarınla Sesli Odaya Katıl, Birlikte Ders Çalışın ve Mülakat Pratiği Yapın.</p>
+            </header>
+
+            <div class="essay-card" style="margin-bottom:20px; text-align:center;">
+                <div style="display:flex; justify-content:center; align-items:center; gap:10px; margin-bottom:12px;">
+                    <span id="voiceStatusBadge" class="program-badge" style="background:#fee2e2; color:#991b1b; font-size:12px; padding:6px 12px;">🔴 Odada Değilsin</span>
+                </div>
+
+                <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
+                    <button class="action-btn" id="voiceJoinBtn" style="background:#16a34a; color:white; border:none; padding:10px 20px; font-size:14px;" onclick="joinVoiceRoom()">🎤 Odaya Katıl</button>
+                    <button class="action-btn" id="voiceMuteBtn" style="display:none; padding:10px 20px; font-size:14px;" onclick="toggleMuteVoice()">🔇 Sesi Kapat</button>
+                    <button class="action-btn" id="voiceLeaveBtn" style="display:none; background:#ef4444; color:white; border:none; padding:10px 20px; font-size:14px;" onclick="leaveVoiceRoom()">🚪 Odadan Ayrıl</button>
+                </div>
+            </div>
+
+            <h3 style="color:var(--title-color); margin-bottom:10px;">👥 Odadaki Öğrenciler</h3>
+            <div class="dashboard-grid" id="voiceUserGrid"></div>
         </div>
 
         <!-- 🧩 GRAMMAR LAB SEKMESİ -->
@@ -1578,7 +1695,6 @@ const badgeDefinitions = [
     { id: "b_note_taker", title: "Not Tutucu", icon: "🎧", desc: "Listening bölümünde ilk dinleme notunu kaydet." }
 ];
 
-// GRAMMAR LAB VERİ ALTYAPISI
 const grammarData = {
     tenses: {
         title: "Zamanlar (Tenses)",
