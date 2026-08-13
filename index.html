@@ -12,7 +12,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, getDocs, query, orderBy, serverTimestamp, increment, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
   import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
   const firebaseConfig = {
@@ -56,6 +56,7 @@
       renderProgram();
       calculateBadgesAndXP();
       updateProfileUI();
+      loadForumPosts();
     } else {
       window.fbUser = null;
       authModal.style.display = "flex";
@@ -93,6 +94,243 @@
       window.cloudUserData[key] = val;
       calculateBadgesAndXP();
     } catch (e) { console.error(e); }
+  };
+
+  // FORUM GÖNDERİSİ PAYLAŞMA
+  window.createForumPost = async function() {
+    if (!window.fbUser || window.fbUser.isAnonymous) {
+      alert("Forumda paylaşım yapmak için e-posta veya Google ile giriş yapmalısınız.");
+      return;
+    }
+
+    const title = document.getElementById("forumPostTitle").value.trim();
+    const content = document.getElementById("forumPostContent").value.trim();
+    const category = document.getElementById("forumPostCategory").value;
+
+    if (!title || !content) {
+      alert("Lütfen başlık ve içerik alanlarını doldurun.");
+      return;
+    }
+
+    const authorName = getUserVal('profile_name') || window.fbUser.displayName || window.fbUser.email;
+    const authorAvatar = getUserVal('profile_avatar') || 'favicon.png';
+
+    try {
+      await addDoc(collection(db, "posts"), {
+        title: title,
+        content: content,
+        category: category,
+        authorUid: window.fbUser.uid,
+        authorName: authorName,
+        authorAvatar: authorAvatar,
+        votes: 0,
+        commentCount: 0,
+        createdAt: serverTimestamp()
+      });
+
+      document.getElementById("forumPostTitle").value = "";
+      document.getElementById("forumPostContent").value = "";
+      alert("Gönderiniz başarıyla paylaşıldı!");
+      loadForumPosts();
+    } catch (e) {
+      alert("Gönderi paylaşılırken hata oluştu: " + e.message);
+    }
+  };
+
+  // FORUM GÖNDERİLERİNİ YÜKLEME (FAZ 2: UPVOTE/DOWNVOTE VE YORUM DESTEKLİ)
+  window.loadForumPosts = async function() {
+    const feed = document.getElementById("forumFeed");
+    if (!feed) return;
+    feed.innerHTML = "<p style='text-align:center; opacity:0.7;'>Gönderiler yükleniyor...</p>";
+
+    try {
+      const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+      const querySnapshot = await getDocs(q);
+      
+      if (querySnapshot.empty) {
+        feed.innerHTML = "<p style='text-align:center; opacity:0.7;'>Henüz hiç gönderi paylaşılmamış. İlk gönderiyi sen paylaş!</p>";
+        return;
+      }
+
+      feed.innerHTML = "";
+      querySnapshot.forEach((docSnap) => {
+        const post = docSnap.data();
+        const postId = docSnap.id;
+        const postCard = document.createElement("div");
+        postCard.className = "essay-card";
+        postCard.style.marginBottom = "12px";
+
+        const voteCount = post.votes || 0;
+        const commentCount = post.commentCount || 0;
+
+        postCard.innerHTML = `
+          <div style="display:flex; gap:12px; align-items:flex-start;">
+            <!-- UPVOTE/DOWNVOTE SOL KOLON -->
+            <div style="display:flex; flex-direction:column; align-items:center; background:rgba(0,0,0,0.05); padding:6px 8px; border-radius:8px;">
+              <button class="action-btn" style="padding:2px 8px; font-size:14px;" onclick="votePost('${postId}', 1)">▲</button>
+              <span style="font-size:12px; font-weight:bold; margin:4px 0;" id="vote-score-${postId}">${voteCount}</span>
+              <button class="action-btn" style="padding:2px 8px; font-size:14px;" onclick="votePost('${postId}', -1)">▼</button>
+            </div>
+
+            <!-- İÇERİK BÖLÜMÜ -->
+            <div style="flex:1;">
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <img src="${post.authorAvatar || 'favicon.png'}" class="profile-avatar-img" alt="Avatar">
+                  <div>
+                    <strong style="font-size:13px;">${post.authorName || 'Kullanıcı'}</strong>
+                    <span class="program-badge" style="margin-left:6px;">${post.category || 'Genel'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <h3 style="margin:8px 0 4px 0; font-size:16px; color:var(--title-color);">${post.title}</h3>
+              <p style="margin:0 0 10px 0; font-size:13px; line-height:1.5; opacity:0.9; white-space:pre-wrap;">${post.content}</p>
+
+              <!-- YORUM BUTONU -->
+              <div style="display:flex; gap:10px; align-items:center;">
+                <button class="action-btn" style="font-size:11px;" onclick="toggleComments('${postId}')">💬 ${commentCount} Yorum</button>
+              </div>
+
+              <!-- YORUM ALANI (GİZLİ BAŞLAR) -->
+              <div id="comments-section-${postId}" style="display:none; margin-top:12px; border-top:1px solid var(--border); padding-top:10px;">
+                <div id="comments-list-${postId}" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+                  <p style="font-size:11px; opacity:0.7;">Yorumlar yükleniyor...</p>
+                </div>
+
+                <div style="display:flex; gap:6px;">
+                  <input type="text" id="comment-input-${postId}" class="auth-input" style="margin:0; font-size:12px;" placeholder="Bir yorum yaz...">
+                  <button class="action-btn" style="background:#2563eb; color:white; border:none; padding:6px 12px; white-space:nowrap;" onclick="addComment('${postId}')">Gönder</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        feed.appendChild(postCard);
+      });
+    } catch (e) {
+      feed.innerHTML = "<p style='text-align:center; color:#ef4444;'>Gönderiler yüklenirken hata oluştu.</p>";
+    }
+  };
+
+  // OY VERME (UPVOTE / DOWNVOTE)
+  window.votePost = async function(postId, delta) {
+    if (!window.fbUser || window.fbUser.isAnonymous) {
+      alert("Oy vermek için e-posta veya Google ile giriş yapmalısınız.");
+      return;
+    }
+
+    try {
+      const userVoteRef = doc(db, "posts", postId, "userVotes", window.fbUser.uid);
+      const postRef = doc(db, "posts", postId);
+
+      await runTransaction(db, async (transaction) => {
+        const userVoteDoc = await transaction.get(userVoteRef);
+        const postDoc = await transaction.get(postRef);
+
+        if (!postDoc.exists()) return;
+
+        let currentScore = postDoc.data().votes || 0;
+        let previousVote = userVoteDoc.exists() ? userVoteDoc.data().value : 0;
+
+        let newScore = currentScore;
+
+        if (previousVote === delta) {
+          // Oyu geri al
+          newScore -= delta;
+          transaction.delete(userVoteRef);
+        } else {
+          // Oyu güncelle veya yeni oy ver
+          newScore = currentScore - previousVote + delta;
+          transaction.set(userVoteRef, { value: delta });
+        }
+
+        transaction.update(postRef, { votes: newScore });
+        document.getElementById(`vote-score-${postId}`).innerText = newScore;
+      });
+    } catch (e) {
+      console.error("Oy kullanılamadı:", e);
+    }
+  };
+
+  // YORUM ALANINI AÇ/KAPAT VE YORUMLARI YÜKLE
+  window.toggleComments = async function(postId) {
+    const sec = document.getElementById(`comments-section-${postId}`);
+    if (sec.style.display === "none") {
+      sec.style.display = "block";
+      loadComments(postId);
+    } else {
+      sec.style.display = "none";
+    }
+  };
+
+  // YORUMLARI YÜKLEME
+  window.loadComments = async function(postId) {
+    const list = document.getElementById(`comments-list-${postId}`);
+    try {
+      const q = query(collection(db, "posts", postId, "comments"), orderBy("createdAt", "asc"));
+      const snap = await getDocs(q);
+
+      if (snap.empty) {
+        list.innerHTML = "<p style='font-size:11px; opacity:0.7;'>Henüz yorum yapılmamış. İlk yorumu sen yap!</p>";
+        return;
+      }
+
+      list.innerHTML = "";
+      snap.forEach(d => {
+        const c = d.data();
+        const cBox = document.createElement("div");
+        cBox.style.background = "rgba(0,0,0,0.03)";
+        cBox.style.padding = "6px 10px";
+        cBox.style.borderRadius = "6px";
+        cBox.style.fontSize = "12px";
+
+        cBox.innerHTML = `
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
+            <img src="${c.authorAvatar || 'favicon.png'}" style="width:18px; height:18px; border-radius:50%; object-fit:cover;">
+            <strong style="font-size:11px;">${c.authorName || 'Kullanıcı'}</strong>
+          </div>
+          <p style="margin:0; opacity:0.9; line-height:1.3;">${c.text}</p>
+        `;
+        list.appendChild(cBox);
+      });
+    } catch (e) {
+      list.innerHTML = "<p style='font-size:11px; color:#ef4444;'>Yorumlar alınamadı.</p>";
+    }
+  };
+
+  // YORUM EKLEME
+  window.addComment = async function(postId) {
+    if (!window.fbUser || window.fbUser.isAnonymous) {
+      alert("Yorum yapmak için e-posta veya Google ile giriş yapmalısınız.");
+      return;
+    }
+
+    const input = document.getElementById(`comment-input-${postId}`);
+    const text = input.value.trim();
+
+    if (!text) return;
+
+    const authorName = getUserVal('profile_name') || window.fbUser.displayName || window.fbUser.email;
+    const authorAvatar = getUserVal('profile_avatar') || 'favicon.png';
+
+    try {
+      await addDoc(collection(db, "posts", postId, "comments"), {
+        text: text,
+        authorUid: window.fbUser.uid,
+        authorName: authorName,
+        authorAvatar: authorAvatar,
+        createdAt: serverTimestamp()
+      });
+
+      const postRef = doc(db, "posts", postId);
+      await updateDoc(postRef, { commentCount: increment(1) });
+
+      input.value = "";
+      loadComments(postId);
+    } catch (e) {
+      alert("Yorum eklenirken hata oluştu: " + e.message);
+    }
   };
 
   window.handleAuthAction = async function(type) {
@@ -435,8 +673,8 @@
     .auth-error { color: #ef4444; font-size: 11px; margin-top: 8px; min-height: 15px; }
 
     /* PROFİL DÜZENLEME MODÜLÜ CSS */
-    .profile-avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); }
-    .profile-avatar-preview { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #2563eb; display: block; margin: 10px 0; }
+    .profile-avatar-img { width: 34px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); background-size: cover; background-position: center; display: block; }
+    .profile-avatar-preview { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #2563eb; display: block; margin: 10px 0; background-size: cover; background-position: center; }
 
     @media (max-width: 768px) {
         .mobile-header { display: flex; }
@@ -539,6 +777,7 @@
             <li onclick="switchView('vocab-view', this)">📚 Kelime İstasyonu</li>
             <li onclick="switchView('essay-view', this)">✍️ Mini Essay Sandbox</li>
             <li onclick="switchView('spaced-view', this)">🧠 Akıllı Tekrar (Bugün)</li>
+            <li onclick="switchView('forum-view', this)">💬 Akademik Forum</li>
             <li onclick="switchView('tureng-view', this)">🇹🇷 Tureng Sözlük</li>
             <li onclick="switchView('settings-view', this)">⚙️ Ayarlar & Araçlar</li>
         </ul>
@@ -570,6 +809,36 @@
             </div>
 
             <div id="program-container"></div>
+        </div>
+
+        <!-- AKADEMİK FORUM SEKMESİ (FAZ 2: UPVOTE/DOWNVOTE + YORUM SİSTEMİ) -->
+        <div id="forum-view" class="view-section">
+            <header>
+                <h1>💬 Akademik Forum & Topluluk</h1>
+                <p class="subtitle">Diğer öğrencilerle takıldığın soruları paylaş, essay'lerini tartış, oy ver ve yorum yap.</p>
+            </header>
+
+            <!-- GÖNDERİ PAYLAŞMA KUTUSU -->
+            <div class="essay-card" style="margin-bottom:20px;">
+                <h3 style="margin-top:0;">📝 Yeni Gönderi Paylaş</h3>
+                <input type="text" id="forumPostTitle" class="auth-input" placeholder="Gönderi Başlığı (örn: Opinion Essay Giriş Paragrafım Nasıl Olmuş?)">
+                
+                <div style="display:flex; gap:10px; margin-bottom:10px;">
+                    <select id="forumPostCategory" class="auth-input" style="margin:0; flex:1;">
+                        <option value="✍️ Essay Feedback">✍️ Essay Feedback</option>
+                        <option value="❓ Gramer Sorusu">❓ Gramer Sorusu</option>
+                        <option value="💡 Sınav Taktikleri">💡 Sınav Taktikleri</option>
+                        <option value="💬 Genel Sohbet">💬 Genel Sohbet</option>
+                    </select>
+                </div>
+
+                <textarea id="forumPostContent" class="essay-textarea" style="height:100px;" placeholder="Düşüncelerini, sorunu veya essay taslağını buraya yaz..."></textarea>
+                <button class="action-btn" style="background:#2563eb; color:white; border:none; padding:10px; width:100%; font-size:13px; margin-top:10px;" onclick="createForumPost()">🚀 Gönderiyi Paylaş</button>
+            </div>
+
+            <!-- GÖNDERİ AKIŞI (FEED) -->
+            <h3 style="color:var(--title-color);">🔥 Son Paylaşılanlar</h3>
+            <div id="forumFeed"></div>
         </div>
 
         <!-- PROFİLİM VE ÖZELLEŞTİRME SEKMESİ (SADECE AÇILIR MENÜDEN AÇILIR) -->
@@ -789,7 +1058,7 @@ const badgeDefinitions = [
     { id: "b_note_taker", title: "Not Tutucu", icon: "🎧", desc: "Listening bölümünde ilk dinleme notunu kaydet." }
 ];
 
-// GIF VEYA GÖRSEL YÜKLEME (ANIMASYON SIKIŞTIRILMADAN DOĞRUDAN ALINIR)
+// GIF VEYA GÖRSEL YÜKLEME (ANIMASYON SIKIŞTIRILMADAN DOĞRUDAN HAM VERİ ALINIR)
 function handleCustomAvatarUpload(event) {
     const file = event.target.files[0];
     if (file) {
@@ -800,7 +1069,7 @@ function handleCustomAvatarUpload(event) {
         const reader = new FileReader();
         reader.onload = function(e) {
             customAvatarBase64 = e.target.result;
-            document.getElementById("profileAvatarPreview").src = customAvatarBase64;
+            setAvatarSrc(customAvatarBase64);
             document.getElementById("avatarUrlInput").value = '';
         };
         reader.readAsDataURL(file);
@@ -810,14 +1079,22 @@ function handleCustomAvatarUpload(event) {
 function handleAvatarUrlInput(url) {
     if (url.trim().length > 5) {
         customAvatarBase64 = url.trim();
-        document.getElementById("profileAvatarPreview").src = customAvatarBase64;
+        setAvatarSrc(customAvatarBase64);
     }
+}
+
+function setAvatarSrc(src) {
+    const displayImg = document.getElementById("userAvatarDisplay");
+    const previewImg = document.getElementById("profileAvatarPreview");
+    
+    if (displayImg) { displayImg.src = src; }
+    if (previewImg) { previewImg.src = src; }
 }
 
 // PROFİL FOTOĞRAFINI KALDIRMA / VARSAYILANA DÖNDÜRME
 function removeCustomAvatar() {
     customAvatarBase64 = 'favicon.png';
-    document.getElementById("profileAvatarPreview").src = 'favicon.png';
+    setAvatarSrc('favicon.png');
     document.getElementById("avatarFileInput").value = '';
     document.getElementById("avatarUrlInput").value = '';
 }
@@ -837,8 +1114,7 @@ function updateProfileUI() {
     const goalEssay = getUserVal('profile_goal_essay') || "1";
 
     customAvatarBase64 = avatar;
-    document.getElementById("userAvatarDisplay").src = avatar;
-    document.getElementById("profileAvatarPreview").src = avatar;
+    setAvatarSrc(avatar);
     document.getElementById("userEmailDisplay").innerText = name;
 
     const nameInput = document.getElementById("profileNameInput");
@@ -1302,6 +1578,7 @@ function switchView(viewId, element) {
     if (viewId === 'tureng-view') renderTurengQuickLinks();
     if (viewId === 'badges-view') calculateBadgesAndXP();
     if (viewId === 'profile-view') updateProfileUI();
+    if (viewId === 'forum-view') window.loadForumPosts();
 }
 
 function openTureng(word) {
