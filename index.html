@@ -576,16 +576,21 @@
         <div id="profile-view" class="view-section">
             <header>
                 <h1>👤 Profilim & Kişiselleştirme</h1>
-                <p class="subtitle">Kendi profil fotoğrafını yükle, görünür adını ve akademik hedeflerini güncelle.</p>
+                <p class="subtitle">Kendi profil fotoğrafını/GIF'ini yükle veya link yapıştır, adını ve hedeflerini güncelle.</p>
             </header>
 
             <div class="essay-card">
-                <h3>1. Profil Fotoğrafı Yükle & Düzenle</h3>
+                <h3>1. Profil Fotoğrafı / GIF Ekle</h3>
                 <img id="profileAvatarPreview" class="profile-avatar-preview" src="favicon.png" alt="Önizleme">
+                
+                <label style="font-size:11px; font-weight:bold; display:block; margin-bottom:4px;">Cihazdan Fotoğraf/GIF Seç (Max 1MB):</label>
                 <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
                     <input type="file" id="avatarFileInput" accept="image/*" class="auth-input" style="flex:1;" onchange="handleCustomAvatarUpload(event)">
                     <button class="action-btn" style="background:#ef4444; color:white; border:none; padding:8px 12px;" onclick="removeCustomAvatar()">🗑️ Fotoğrafı Kaldır</button>
                 </div>
+
+                <label style="font-size:11px; font-weight:bold; display:block; margin-bottom:4px;">veya Doğrudan GIF/Resim Bağlantısı (URL) Yapıştır:</label>
+                <input type="text" id="avatarUrlInput" class="auth-input" placeholder="https://media.giphy.com/media/.../giphy.gif" oninput="handleAvatarUrlInput(this.value)">
 
                 <hr style="border:0; border-top:1px solid var(--border); margin:15px 0;">
 
@@ -784,25 +789,28 @@ const badgeDefinitions = [
     { id: "b_note_taker", title: "Not Tutucu", icon: "🎧", desc: "Listening bölümünde ilk dinleme notunu kaydet." }
 ];
 
-// OTOMATİK RESİM SIKIŞTIRMA (COMPRESS) FONKSİYONU
+// GIF VEYA GÖRSEL YÜKLEME (ANIMASYON SIKIŞTIRILMADAN DOĞRUDAN ALINIR)
 function handleCustomAvatarUpload(event) {
     const file = event.target.files[0];
     if (file) {
+        if (file.size > 1024 * 1024) { // 1MB Sınırı
+            alert("Lütfen 1MB'tan küçük bir resim veya GIF seçin.");
+            return;
+        }
         const reader = new FileReader();
         reader.onload = function(e) {
-            const img = new Image();
-            img.onload = function() {
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                canvas.width = 150;
-                canvas.height = 150;
-                ctx.drawImage(img, 0, 0, 150, 150);
-                customAvatarBase64 = canvas.toDataURL('image/jpeg', 0.8);
-                document.getElementById("profileAvatarPreview").src = customAvatarBase64;
-            };
-            img.src = e.target.result;
+            customAvatarBase64 = e.target.result;
+            document.getElementById("profileAvatarPreview").src = customAvatarBase64;
+            document.getElementById("avatarUrlInput").value = '';
         };
         reader.readAsDataURL(file);
+    }
+}
+
+function handleAvatarUrlInput(url) {
+    if (url.trim().length > 5) {
+        customAvatarBase64 = url.trim();
+        document.getElementById("profileAvatarPreview").src = customAvatarBase64;
     }
 }
 
@@ -811,6 +819,7 @@ function removeCustomAvatar() {
     customAvatarBase64 = 'favicon.png';
     document.getElementById("profileAvatarPreview").src = 'favicon.png';
     document.getElementById("avatarFileInput").value = '';
+    document.getElementById("avatarUrlInput").value = '';
 }
 
 function updateProfileUI() {
@@ -1488,7 +1497,7 @@ function aiCheckSentence(word, storageKey) {
     let feedback = [];
 
     if (!lowerText.includes(cleanWord)) { feedback.push(`⚠️ Hedef kelimen olan <b>"${cleanWord}"</b> cümlenin içinde geçmiyor.`); } 
-    else { feedback.push(`✅ <b>"${cleanWord}"</b> kelimesini cümlendi kullandın.`); }
+    else { feedback.push(`✅ <b>"${cleanWord}"</b> kelimesini cümlende kullandın.`); }
 
     if (!/^[A-Z]/.test(text.trim())) feedback.push("💡 Cümleye büyük harfle başlamalısın.");
     if (!/[.!?]$/.test(text.trim())) feedback.push("💡 Cümlenin sonuna nokta (.) koymalısın.");
