@@ -59,9 +59,10 @@
       renderProgram();
       calculateBadgesAndXP();
       updateProfileUI();
+      renderDashboard();
       
       const currentHash = window.location.hash.replace('#', '');
-      const savedView = currentHash || localStorage.getItem('last_active_view') || 'program-view';
+      const savedView = currentHash || localStorage.getItem('last_active_view') || 'dashboard-view';
       const targetMenuItem = document.querySelector(`.sidebar-menu li[onclick*="'${savedView}'"]`);
       switchView(savedView, targetMenuItem);
 
@@ -122,6 +123,7 @@
 
     const authorName = getUserVal('profile_name') || window.fbUser.displayName || window.fbUser.email;
     const authorAvatar = getUserVal('profile_avatar') || 'favicon.png';
+    const authorBio = getUserVal('profile_bio') || 'Akademik Öğrenci';
 
     try {
       await addDoc(collection(db, "posts"), {
@@ -131,6 +133,7 @@
         authorUid: window.fbUser.uid,
         authorName: authorName,
         authorAvatar: authorAvatar,
+        authorBio: authorBio,
         votes: 0,
         commentCount: 0,
         bestCommentId: null,
@@ -142,6 +145,71 @@
     } catch (e) {
       alert("Gönderi paylaşılırken hata oluştu: " + e.message);
     }
+  };
+
+  // KULLANICI PROFİL KARTINI AÇMA (MODAL)
+  window.openUserProfileModal = async function(uid) {
+    const modal = document.getElementById("userProfileModal");
+    const container = document.getElementById("userProfileModalContent");
+    modal.style.display = "flex";
+    container.innerHTML = "<p style='text-align:center; padding:20px;'>Profil yükleniyor...</p>";
+
+    try {
+      const userDocSnap = await getDoc(doc(db, "users", uid));
+      let userData = userDocSnap.exists() ? userDocSnap.data() : {};
+
+      const name = userData.profile_name || 'Öğrenci';
+      const avatar = userData.profile_avatar || 'favicon.png';
+      const bio = userData.profile_bio || 'Medipol Proficiency Adayı';
+
+      const q = query(collection(db, "posts"), where("authorUid", "==", uid));
+      const postSnaps = await getDocs(q);
+      
+      let totalVotes = 0;
+      let postListHTML = "";
+
+      postSnaps.forEach(docSnap => {
+        const p = docSnap.data();
+        totalVotes += (p.votes || 0);
+        postListHTML += `
+          <div style="background:rgba(0,0,0,0.03); padding:8px 10px; border-radius:6px; margin-top:6px; text-align:left;">
+            <strong style="font-size:12px; color:var(--title-color);">${p.title}</strong>
+            <p style="margin:2px 0 0 0; font-size:11px; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.content}</p>
+          </div>
+        `;
+      });
+
+      container.innerHTML = `
+        <div style="text-align:center; position:relative;">
+          <button style="position:absolute; top:-10px; right:-10px; background:none; border:none; font-size:18px; cursor:pointer;" onclick="closeUserProfileModal()">✕</button>
+          <img src="${avatar}" style="width:70px; height:70px; border-radius:50%; object-fit:cover; border:2px solid #2563eb; margin-bottom:8px;">
+          <h2 style="margin:0; font-size:16px; color:var(--title-color);">${name}</h2>
+          <p style="margin:4px 0 10px 0; font-size:12px; color:var(--subtitle-color);">${bio}</p>
+          
+          <div style="display:flex; justify-content:space-around; background:rgba(37,99,235,0.08); padding:8px; border-radius:8px; margin-bottom:12px;">
+            <div>
+              <div style="font-size:14px; font-weight:bold; color:#2563eb;">${postSnaps.size}</div>
+              <div style="font-size:10px; opacity:0.8;">Gönderi</div>
+            </div>
+            <div>
+              <div style="font-size:14px; font-weight:bold; color:#16a34a;">${totalVotes}</div>
+              <div style="font-size:10px; opacity:0.8;">Karma (Oy)</div>
+            </div>
+          </div>
+
+          <h4 style="margin:10px 0 4px 0; text-align:left; font-size:13px; color:var(--title-color);">Son Gönderileri:</h4>
+          <div style="max-height:150px; overflow-y:auto;">
+            ${postListHTML || "<p style='font-size:11px; opacity:0.7; text-align:left;'>Henüz gönderisi yok.</p>"}
+          </div>
+        </div>
+      `;
+    } catch (e) {
+      container.innerHTML = "<p style='text-align:center; color:#ef4444; padding:20px;'>Profil yüklenemedi.</p>";
+    }
+  };
+
+  window.closeUserProfileModal = function() {
+    document.getElementById("userProfileModal").style.display = "none";
   };
 
   // GÖNDERİ SİLME
@@ -170,7 +238,7 @@
     }
   };
 
-  // GÖNDERİ BAĞLANTISINI PAYLAŞ / KOPYALA
+  // GÖNDERİ BAĞLANTISINI PAYLAŞ
   window.sharePost = function(postId) {
     const postUrl = window.location.origin + window.location.pathname + "#forum-view";
     navigator.clipboard.writeText(postUrl);
@@ -231,10 +299,10 @@
 
             <div style="flex:1;">
               <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
-                <div style="display:flex; align-items:center; gap:8px;">
+                <div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="openUserProfileModal('${post.authorUid}')">
                   <img src="${post.authorAvatar || 'favicon.png'}" class="profile-avatar-img" alt="Avatar">
                   <div>
-                    <strong style="font-size:13px;">${post.authorName || 'Kullanıcı'}</strong>
+                    <strong style="font-size:13px; text-decoration:underline;">${post.authorName || 'Kullanıcı'}</strong>
                     <span class="program-badge" style="margin-left:6px;">${post.category || 'Genel'}</span>
                   </div>
                 </div>
@@ -334,7 +402,7 @@
     }
   };
 
-  // CANLI YORUM DİNLEYİCİSİ (EN İYİ CEVAP VE SİLME BUTONLU)
+  // CANLI YORUM DİNLEYİCİSİ
   const commentUnsubscribers = {};
   window.listenComments = function(postId, postAuthorUid, bestCommentId) {
     const list = document.getElementById(`comments-list-${postId}`);
@@ -365,9 +433,9 @@
 
         cBox.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <div style="display:flex; align-items:center; gap:6px;">
+            <div style="display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="openUserProfileModal('${c.authorUid}')">
               <img src="${c.authorAvatar || 'favicon.png'}" style="width:18px; height:18px; border-radius:50%; object-fit:cover;">
-              <strong style="font-size:11px;">${c.authorName || 'Kullanıcı'}</strong>
+              <strong style="font-size:11px; text-decoration:underline;">${c.authorName || 'Kullanıcı'}</strong>
               ${isBest ? `<span style="color:#16a34a; font-weight:bold; font-size:10px;">✅ EN İYİ CEVAP</span>` : ''}
             </div>
             <div style="display:flex; gap:4px;">
@@ -382,7 +450,6 @@
     });
   };
 
-  // EN İYİ CEVAP OLARAK İŞARETLEME
   window.setBestComment = async function(postId, commentId) {
     try {
       await updateDoc(doc(db, "posts", postId), { bestCommentId: commentId });
@@ -392,7 +459,6 @@
     }
   };
 
-  // YORUM SİLME
   window.deleteComment = async function(postId, commentId) {
     if (!confirm("Yorumunuzu silmek istediğinize emin misiniz?")) return;
     try {
@@ -403,7 +469,6 @@
     }
   };
 
-  // YORUM EKLEME
   window.addComment = async function(postId) {
     if (!window.fbUser || window.fbUser.isAnonymous) {
       alert("Yorum yapmak için e-posta veya Google ile giriş yapmalısınız.");
@@ -775,9 +840,17 @@
     .forgot-pass-link { display: block; font-size: 11px; color: #3b82f6; text-decoration: none; margin-top: 10px; cursor: pointer; }
     .auth-error { color: #ef4444; font-size: 11px; margin-top: 8px; min-height: 15px; }
 
-    /* PROFİL DÜZENLEME MODÜLÜ CSS */
+    /* PROFİL DÜZENLEME VE MODAL KART CSS */
     .profile-avatar-img { width: 34px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); background-size: cover; background-position: center; display: block; }
     .profile-avatar-preview { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #2563eb; display: block; margin: 10px 0; background-size: cover; background-position: center; }
+
+    /* DASHBOARD GRID CSS */
+    .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .dash-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; }
+    .dash-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); }
+    .dash-icon { font-size: 28px; margin-bottom: 8px; }
+    .dash-title { font-size: 15px; font-weight: bold; color: var(--title-color); margin-bottom: 4px; }
+    .dash-desc { font-size: 12px; color: var(--subtitle-color); line-height: 1.4; margin-bottom: 12px; }
 
     @media (max-width: 768px) {
         .mobile-header { display: flex; }
@@ -800,6 +873,13 @@
         <img src="logo.gif" alt="Logo" style="width: 24px; height: 24px; object-fit: contain;"> AWL
     </span>
     <button class="menu-toggle-btn" onclick="toggleMobileSidebar()">☰ Menü</button>
+</div>
+
+<!-- BAŞKASININ PROFİLİNİ GÖRÜNTÜLEME MODALI -->
+<div class="auth-overlay" id="userProfileModal" style="display:none;">
+    <div class="auth-card" style="max-width:400px; padding:20px;" id="userProfileModalContent">
+        <!-- İÇERİK JAVASCRIPT ILE DOLACAK -->
+    </div>
 </div>
 
 <!-- GİRİŞ MODALI -->
@@ -875,7 +955,8 @@
         </div>
 
         <ul class="sidebar-menu">
-            <li class="active" onclick="switchView('program-view', this)">📅 Çalışma Programı</li>
+            <li class="active" onclick="switchView('dashboard-view', this)">🏠 Ana Sayfa</li>
+            <li onclick="switchView('program-view', this)">📅 Çalışma Programı</li>
             <li onclick="switchView('listening-view', this)">🎧 Podcast & Listening</li>
             <li onclick="switchView('vocab-view', this)">📚 Kelime İstasyonu</li>
             <li onclick="switchView('essay-view', this)">✍️ Mini Essay Sandbox</li>
@@ -899,8 +980,72 @@
     <!-- ANA İÇERİK -->
     <div class="main-content" onclick="closeMobileSidebarIfOpen()">
 
+        <!-- 🏠 YENİ ANA SAYFA (DASHBOARD) SEKMESİ -->
+        <div id="dashboard-view" class="view-section active">
+            <div class="essay-card" style="margin-bottom:20px; background:linear-gradient(135deg, rgba(37,99,235,0.1), rgba(59,130,246,0.05)); border-color:var(--sidebar-active);">
+                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <img id="dashUserAvatar" src="favicon.png" style="width:60px; height:60px; border-radius:50%; object-fit:cover; border:2px solid #2563eb;">
+                    <div>
+                        <h2 style="margin:0; font-size:20px; color:var(--title-color);" id="dashWelcomeTitle">Hoş Geldin, Öğrenci! 👋</h2>
+                        <p style="margin:4px 0 0 0; font-size:12px; color:var(--subtitle-color);" id="dashUserBio">Medipol Proficiency Hazırlık İstasyonu</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GÜNÜN KELİMESİ KARTI -->
+            <div class="essay-card" style="margin-bottom:20px; border-left:4px solid #10b981;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="program-badge" style="background:#dcfce7; color:#15803d;">💡 Günün Akademik Kelimesi</span>
+                    <button class="action-btn" style="padding:2px 6px; font-size:11px;" onclick="renderDashboardWord()">🎲 Başka Getir</button>
+                </div>
+                <h3 style="margin:10px 0 4px 0; color:var(--title-color); font-size:18px;" id="dashWordTitle">Analyze (v)</h3>
+                <p style="margin:0; font-size:13px;" id="dashWordMeaning"><b>Anlamı:</b> Analiz etmek, incelemek</p>
+                <p style="margin:4px 0 0 0; font-size:12px; color:var(--synonym-color);" id="dashWordSyn"><b>Eş Anlamlılar:</b> Examine, Inspect</p>
+            </div>
+
+            <!-- HIZLI ERİŞİM PANOLARI -->
+            <h3 style="color:var(--title-color); margin-bottom:10px;">⚡ Hızlı Erişim İstasyonu</h3>
+            <div class="dashboard-grid">
+                <div class="dash-card" onclick="switchView('program-view', null)">
+                    <div>
+                        <div class="dash-icon">📅</div>
+                        <div class="dash-title">30 Günlük Kamp Programı</div>
+                        <div class="dash-desc">Günün gramer, okuma ve dinleme görevlerini tamamla.</div>
+                    </div>
+                    <button class="action-btn" style="background:#2563eb; color:white; border:none;">Programa Git →</button>
+                </div>
+
+                <div class="dash-card" onclick="switchView('spaced-view', null)">
+                    <div>
+                        <div class="dash-icon">🧠</div>
+                        <div class="dash-title">Akıllı Tekrar (S.R.S)</div>
+                        <div class="dash-desc">Unutma eğrisine göre bugün tekrar etmen gereken kelimeler.</div>
+                    </div>
+                    <button class="action-btn" style="background:#16a34a; color:white; border:none;">Tekrarlara Başla →</button>
+                </div>
+
+                <div class="dash-card" onclick="switchView('essay-view', null)">
+                    <div>
+                        <div class="dash-icon">✍️</div>
+                        <div class="dash-title">Mini Essay Sandbox</div>
+                        <div class="dash-desc">Seçtiğin kelimelerle akademik paragraf yaz ve AI analizi al.</div>
+                    </div>
+                    <button class="action-btn" style="background:#8b5cf6; color:white; border:none;">Yazmaya Başla →</button>
+                </div>
+
+                <div class="dash-card" onclick="switchView('forum-view', null)">
+                    <div>
+                        <div class="dash-icon">💬</div>
+                        <div class="dash-title">Akademik Forum</div>
+                        <div class="dash-desc">Diğer öğrencilerle soru paylaş, tartış ve feedback al.</div>
+                    </div>
+                    <button class="action-btn" style="background:#0284c7; color:white; border:none;">Foruma Göz At →</button>
+                </div>
+            </div>
+        </div>
+
         <!-- ÇALIŞMA PROGRAMI SEKMESİ -->
-        <div id="program-view" class="view-section active">
+        <div id="program-view" class="view-section">
             <header>
                 <h1>Medipol Proficiency 30 Günlük Kamp</h1>
                 <p class="subtitle">12 Ağustos - 10 Eylül 2026 • Hızlandırılmış Yoğun Hazırlık Programı</p>
@@ -1180,6 +1325,26 @@ const badgeDefinitions = [
     { id: "b_note_taker", title: "Not Tutucu", icon: "🎧", desc: "Listening bölümünde ilk dinleme notunu kaydet." }
 ];
 
+function renderDashboardWord() {
+    const randomIndex = Math.floor(Math.random() * wordsData.length);
+    const item = wordsData[randomIndex];
+    document.getElementById("dashWordTitle").innerText = item.word;
+    document.getElementById("dashWordMeaning").innerHTML = `<b>Anlamı:</b> ${item.meaning}`;
+    document.getElementById("dashWordSyn").innerHTML = `<b>Eş Anlamlılar:</b> ${item.syn}`;
+}
+
+function renderDashboard() {
+    const isAnon = window.fbUser && window.fbUser.isAnonymous;
+    const avatar = getUserVal('profile_avatar') || 'favicon.png';
+    const name = getUserVal('profile_name') || (window.fbUser ? (isAnon ? "Misafir Kullanıcı 👤" : (window.fbUser.displayName || window.fbUser.email)) : "Öğrenci");
+    const bio = getUserVal('profile_bio') || 'Medipol Proficiency Hazırlık İstasyonu';
+
+    document.getElementById("dashUserAvatar").src = avatar;
+    document.getElementById("dashWelcomeTitle").innerText = `Hoş Geldin, ${name}! 👋`;
+    document.getElementById("dashUserBio").innerText = bio;
+    renderDashboardWord();
+}
+
 function handleCustomAvatarUpload(event) {
     const file = event.target.files[0];
     if (file) {
@@ -1267,6 +1432,7 @@ function saveUserProfile() {
     }
 
     updateProfileUI();
+    renderDashboard();
 
     const status = document.getElementById("profileSaveStatus");
     status.style.display = "block";
@@ -1700,6 +1866,7 @@ function switchView(viewId, element) {
     window.location.hash = viewId;
     localStorage.setItem('last_active_view', viewId);
 
+    if (viewId === 'dashboard-view') renderDashboard();
     if (viewId === 'program-view') renderProgram();
     if (viewId === 'spaced-view') renderDueWords();
     if (viewId === 'tureng-view') renderTurengQuickLinks();
