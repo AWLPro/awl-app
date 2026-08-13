@@ -13,6 +13,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
   import { getFirestore, doc, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBVGNvbdvyzi5aBTr_pq-5GpjBGjDu5MVw",
@@ -25,6 +26,14 @@
   };
 
   const app = initializeApp(firebaseConfig);
+
+  // Firebase App Check Zırhı (reCAPTCHA v3)
+  self.FIREBASE_APPCHECK_ACTIVATE_LOGGING = true;
+  initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider('6LdYOoMtAAAAAB4jNiJ_0z3iYv4D2hySIVIe_xPN'),
+    isTokenAutoRefreshEnabled: true
+  });
+
   const auth = getAuth(app);
   const db = getFirestore(app);
   const googleProvider = new GoogleAuthProvider();
@@ -235,6 +244,7 @@
     .logo-title { font-size: 16px; font-weight: bold; color: #ffffff; letter-spacing: 0.5px; }
     .logo-badge { font-size: 10px; color: #60a5fa; text-transform: uppercase; font-weight: 600; }
 
+    /* PROFİL BAR & DROPDOWN */
     .user-profile-bar {
         position: relative;
         padding: 12px 20px;
