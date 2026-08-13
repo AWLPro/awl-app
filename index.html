@@ -65,6 +65,7 @@
       renderGrammarLab();
       listenNotifications();
       listenVoiceLounge();
+      checkAdminStatus();
       
       const currentHash = window.location.hash.replace('#', '');
       const savedView = currentHash || localStorage.getItem('last_active_view') || 'dashboard-view';
@@ -110,9 +111,70 @@
     } catch (e) { console.error(e); }
   };
 
-  // SESLİ ÇALIŞMA ODASI (VOICE LOUNGE) ALTYAPISI
-  window.localVoiceStream = null;
-  window.isMuted = false;
+  // ADMIN KONTROLÜ VE YETKİLENDİRME SİSTEMİ (AGAH VE ATANANLAR İÇİN)
+  window.checkAdminStatus = async function() {
+    if (!window.fbUser) return;
+    const email = (window.fbUser.email || "").toLowerCase();
+    const name = (getUserVal('profile_name') || window.fbUser.displayName || "").toLowerCase();
+    
+    let isAdmin = email.includes("agah") || name.includes("agah");
+
+    try {
+      const adminCheckRef = doc(db, "admins", window.fbUser.uid);
+      const adminSnap = await getDoc(adminCheckRef);
+      if (adminSnap.exists() && adminSnap.data().isAdmin) {
+        isAdmin = true;
+      }
+    } catch (e) { console.error(e); }
+
+    const adminMenu = document.getElementById("adminMenuTab");
+    if (adminMenu) {
+      adminMenu.style.display = isAdmin ? "flex" : "none";
+    }
+  };
+
+  // KÜÇÜK HARF, RAKAM VE ALT ÇİZGİ KONTROLLÜ KAYIT (NURİ_132 MANTIĞI)
+  window.handleAuthAction = async function(type) {
+    const email = document.getElementById("authEmail").value.trim();
+    const pass = document.getElementById("authPassword").value.trim();
+    const username = document.getElementById("authUsername") ? document.getElementById("authUsername").value.trim() : "";
+    const errorBox = document.getElementById("authError");
+    errorBox.innerText = "";
+
+    if (!email || !pass) {
+      errorBox.innerText = "Lütfen e-posta ve şifrenizi girin.";
+      return;
+    }
+
+    if (type === 'register') {
+      if (!username) {
+        errorBox.innerText = "Lütfen bir kullanıcı adı seçin.";
+        return;
+      }
+      const regex = /^[a-z0-9_]+$/;
+      if (!regex.test(username)) {
+        errorBox.innerText = "Kullanıcı adı sadece küçük harf, rakam ve alt çizgi (_) içerebilir! (Örn: nuri_132)";
+        return;
+      }
+    }
+
+    try {
+      if (type === 'login') {
+        await signInWithEmailAndPassword(auth, email, pass);
+      } else {
+        const userCred = await createUserWithEmailAndPassword(auth, email, pass);
+        // Kullanıcı adını veritabanına kaydet
+        await setDoc(doc(db, "users", userCred.user.uid), {
+          profile_name: username,
+          profile_avatar: 'favicon.png',
+          profile_bio: 'Medipol Proficiency Adayı'
+        }, { merge: true });
+        alert("Hesabınız başarıyla oluşturuldu!");
+      }
+    } catch (err) { errorBox.innerText = "Hata: " + err.message; }
+  };
+
+  // SESLİ ÇALIŞMA ODASI (STUDY LOUNGE)
   window.isInVoiceRoom = false;
 
   window.joinVoiceRoom = async function() {
@@ -120,60 +182,30 @@
       alert("Ses odasına katılmak için giriş yapmalısınız.");
       return;
     }
+    window.isInVoiceRoom = true;
+    const name = getUserVal('profile_name') || window.fbUser.displayName || 'Öğrenci';
+    const avatar = getUserVal('profile_avatar') || 'favicon.png';
 
-    try {
-      window.localVoiceStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      window.isInVoiceRoom = true;
+    await setDoc(doc(db, "voiceLounge", window.fbUser.uid), {
+      uid: window.fbUser.uid,
+      name: name,
+      avatar: avatar,
+      joinedAt: serverTimestamp()
+    });
 
-      const name = getUserVal('profile_name') || window.fbUser.displayName || 'Öğrenci';
-      const avatar = getUserVal('profile_avatar') || 'favicon.png';
-
-      await setDoc(doc(db, "voiceLounge", window.fbUser.uid), {
-        uid: window.fbUser.uid,
-        name: name,
-        avatar: avatar,
-        isMuted: false,
-        joinedAt: serverTimestamp()
-      });
-
-      document.getElementById("voiceJoinBtn").style.display = "none";
-      document.getElementById("voiceMuteBtn").style.display = "inline-block";
-      document.getElementById("voiceLeaveBtn").style.display = "inline-block";
-      document.getElementById("voiceStatusBadge").innerHTML = "🟢 Odadasın (Ses Bağlantısı Aktif)";
-      document.getElementById("voiceStatusBadge").style.background = "#dcfce7";
-      document.getElementById("voiceStatusBadge").style.color = "#15803d";
-
-    } catch (e) {
-      alert("Mikrofon izni verilmedi veya cihaz bulunamadı: " + e.message);
-    }
-  };
-
-  window.toggleMuteVoice = async function() {
-    if (!window.localVoiceStream) return;
-    window.isMuted = !window.isMuted;
-    window.localVoiceStream.getAudioTracks()[0].enabled = !window.isMuted;
-
-    const btn = document.getElementById("voiceMuteBtn");
-    btn.innerText = window.isMuted ? "🎙️ Sesi Aç" : "🔇 Sesi Kapat";
-    btn.style.background = window.isMuted ? "#ef4444" : "var(--card-bg)";
-    btn.style.color = window.isMuted ? "#ffffff" : "var(--text)";
-
-    await updateDoc(doc(db, "voiceLounge", window.fbUser.uid), { isMuted: window.isMuted });
+    document.getElementById("voiceJoinBtn").style.display = "none";
+    document.getElementById("voiceLeaveBtn").style.display = "inline-block";
+    document.getElementById("voiceStatusBadge").innerHTML = "🟢 Ses Odasındasın (Canlı Çalışma Alanı)";
+    document.getElementById("voiceStatusBadge").style.background = "#dcfce7";
+    document.getElementById("voiceStatusBadge").style.color = "#15803d";
   };
 
   window.leaveVoiceRoom = async function() {
-    if (window.localVoiceStream) {
-      window.localVoiceStream.getTracks().forEach(track => track.stop());
-      window.localVoiceStream = null;
-    }
     window.isInVoiceRoom = false;
-
     if (window.fbUser) {
       await deleteDoc(doc(db, "voiceLounge", window.fbUser.uid));
     }
-
     document.getElementById("voiceJoinBtn").style.display = "inline-block";
-    document.getElementById("voiceMuteBtn").style.display = "none";
     document.getElementById("voiceLeaveBtn").style.display = "none";
     document.getElementById("voiceStatusBadge").innerHTML = "🔴 Odada Değilsin";
     document.getElementById("voiceStatusBadge").style.background = "#fee2e2";
@@ -186,7 +218,7 @@
 
     onSnapshot(collection(db, "voiceLounge"), (snap) => {
       if (snap.empty) {
-        grid.innerHTML = "<p style='font-size:12px; opacity:0.7; grid-column: 1/-1; text-align:center;'>Şu an ses odasında kimse yok. İlk katılan sen ol!</p>";
+        grid.innerHTML = "<p style='font-size:12px; opacity:0.7; grid-column: 1/-1; text-align:center;'>Şu an odada kimse yok. İlk katılan sen ol!</p>";
         return;
       }
 
@@ -198,14 +230,10 @@
         userCard.style.textAlign = "center";
         userCard.style.padding = "12px";
 
-        const borderStyle = u.isMuted ? "2px solid #ef4444" : "3px solid #16a34a";
-
         userCard.innerHTML = `
-          <img src="${u.avatar || 'favicon.png'}" style="width:50px; height:50px; border-radius:50%; object-fit:cover; border:${borderStyle}; margin:0 auto 6px auto; display:block;">
+          <img src="${u.avatar || 'favicon.png'}" style="width:50px; height:50px; border-radius:50%; object-fit:cover; border:3px solid #16a34a; margin:0 auto 6px auto; display:block;">
           <strong style="font-size:12px; display:block; color:var(--title-color);">${u.name}</strong>
-          <span style="font-size:10px; color:${u.isMuted ? '#ef4444' : '#16a34a'}; font-weight:bold;">
-            ${u.isMuted ? '🔇 Sessiz' : '🎙️ Konuşuyor'}
-          </span>
+          <span style="font-size:10px; color:#16a34a; font-weight:bold;">🟢 Odada Çalışıyor</span>
         `;
         grid.appendChild(userCard);
       });
@@ -443,12 +471,12 @@
               <div style="font-size:13px; font-weight:bold; color:#16a34a;">${totalVotes}</div>
               <div style="font-size:10px; opacity:0.8;">Karma</div>
             </div>
-            <div>
-              <div style="font-size:13px; font-weight:bold; color:#8b5cf6;">${followersSnap.size}</div>
+            <div style="cursor:pointer;" onclick="openFollowListModal('${uid}', 'followers')">
+              <div style="font-size:13px; font-weight:bold; color:#8b5cf6; text-decoration:underline;">${followersSnap.size}</div>
               <div style="font-size:10px; opacity:0.8;">Takipçi</div>
             </div>
-            <div>
-              <div style="font-size:13px; font-weight:bold; color:#0284c7;">${followingSnap.size}</div>
+            <div style="cursor:pointer;" onclick="openFollowListModal('${uid}', 'following')">
+              <div style="font-size:13px; font-weight:bold; color:#0284c7; text-decoration:underline;">${followingSnap.size}</div>
               <div style="font-size:10px; opacity:0.8;">Takip Edilen</div>
             </div>
           </div>
@@ -461,6 +489,42 @@
       `;
     } catch (e) {
       container.innerHTML = "<p style='text-align:center; color:#ef4444; padding:20px;'>Profil yüklenemedi.</p>";
+    }
+  };
+
+  window.openFollowListModal = async function(uid, type) {
+    const container = document.getElementById("userProfileModalContent");
+    container.innerHTML = "<p style='text-align:center; padding:20px;'>Liste yükleniyor...</p>";
+
+    try {
+      const snap = await getDocs(collection(db, "users", uid, type));
+      let listHTML = "";
+
+      for (const d of snap.docs) {
+        const targetId = d.id;
+        const uSnap = await getDoc(doc(db, "users", targetId));
+        if (uSnap.exists()) {
+          const uData = uSnap.data();
+          listHTML += `
+            <div style="display:flex; align-items:center; gap:8px; padding:6px; background:rgba(0,0,0,0.03); border-radius:6px; margin-bottom:6px; cursor:pointer;" onclick="openUserProfileModal('${targetId}')">
+              <img src="${uData.profile_avatar || 'favicon.png'}" style="width:24px; height:24px; border-radius:50%; object-fit:cover;">
+              <strong style="font-size:12px;">${uData.profile_name || 'Öğrenci'}</strong>
+            </div>
+          `;
+        }
+      }
+
+      container.innerHTML = `
+        <div style="text-align:center; position:relative;">
+          <button style="position:absolute; top:-10px; right:-10px; background:none; border:none; font-size:18px; cursor:pointer;" onclick="openUserProfileModal('${uid}')">← Geri</button>
+          <h3 style="margin:0 0 10px 0; color:var(--title-color);">${type === 'followers' ? 'Takipçiler' : 'Takip Edilenler'}</h3>
+          <div style="max-height:220px; overflow-y:auto; text-align:left;">
+            ${listHTML || "<p style='font-size:11px; opacity:0.7; text-align:center;'>Liste boş.</p>"}
+          </div>
+        </div>
+      `;
+    } catch (e) {
+      container.innerHTML = "<p style='text-align:center; color:#ef4444; padding:20px;'>Liste alınamadı.</p>";
     }
   };
 
@@ -481,15 +545,99 @@
   window.reportPost = async function(postId) {
     if (!window.fbUser) return;
     try {
+      const pSnap = await getDoc(doc(db, "posts", postId));
+      const pTitle = pSnap.exists() ? pSnap.data().title : "Başlıksız Gönderi";
+
       await addDoc(collection(db, "reports"), {
         postId: postId,
+        postTitle: pTitle,
         reportedBy: window.fbUser.uid,
         createdAt: serverTimestamp()
       });
-      alert("Gönderi yöneticilere bildirildi. Teşekkürler!");
+      alert("Gönderi inceleme için Admin Paneline rapor edildi. Teşekkürler!");
     } catch (e) {
       alert("Bildirim gönderilemedi.");
     }
+  };
+
+  // ADMIN PANELİNDEN YETKİLENDİRME (AGAH YETKİ VEREBİLİR)
+  window.grantAdminRole = async function() {
+    const targetUid = document.getElementById("adminTargetUid").value.trim();
+    if (!targetUid) {
+      alert("Lütfen yetki verilecek kullanıcının UID'sini girin.");
+      return;
+    }
+    try {
+      await setDoc(doc(db, "admins", targetUid), { isAdmin: true });
+      alert("Kullanıcıya başarıyla Admin/Yetkili rolü verildi!");
+      document.getElementById("adminTargetUid").value = "";
+    } catch (e) {
+      alert("Yetki verme hatası: " + e.message);
+    }
+  };
+
+  window.loadAdminReports = async function() {
+    const container = document.getElementById("adminReportsContainer");
+    if (!container) return;
+    container.innerHTML = "<p style='text-align:center; opacity:0.7;'>Raporlar yükleniyor...</p>";
+
+    try {
+      const snap = await getDocs(collection(db, "reports"));
+      
+      let htmlContent = `
+        <div class="essay-card" style="margin-bottom:20px;">
+          <h3 style="margin-top:0;">⚡ Kullanıcıya Yetkili (Admin) Rolü Ver</h3>
+          <p style="font-size:12px; color:var(--subtitle-color);">Yetki vermek istediğin kullanıcının Firebase UID'sini gir.</p>
+          <input type="text" id="adminTargetUid" class="auth-input" placeholder="Kullanıcı UID...">
+          <button class="action-btn" style="background:#2563eb; color:white; border:none; padding:8px 12px;" onclick="grantAdminRole()">Yetki Ver</button>
+        </div>
+        <h3 style="color:var(--title-color);">🚨 Rapor Edilen Gönderiler</h3>
+      `;
+
+      if (snap.empty) {
+        container.innerHTML = htmlContent + "<p style='text-align:center; opacity:0.7; margin-top:15px;'>🎉 Temiz! Hiç rapor edilen gönderi yok.</p>";
+        return;
+      }
+
+      let reportsHTML = "";
+      snap.forEach(d => {
+        const r = d.data();
+        const rId = d.id;
+
+        reportsHTML += `
+          <div class="essay-card" style="margin-bottom:10px;">
+            <strong style="color:#ef4444; font-size:13px;">Rapor Edilen Gönderi: ${r.postTitle || 'İsimsiz'}</strong>
+            <p style="font-size:11px; opacity:0.8; margin:4px 0 10px 0;">Post ID: ${r.postId}</p>
+            <div style="display:flex; gap:8px;">
+              <button class="action-btn" style="background:#ef4444; color:white; border:none; padding:4px 8px; font-size:11px;" onclick="adminDeleteReportedPost('${r.postId}', '${rId}')">🗑️ Postu Kalıcı Sil</button>
+              <button class="action-btn" style="padding:4px 8px; font-size:11px;" onclick="adminDismissReport('${rId}')">✔ Raporu Kaldır</button>
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = htmlContent + reportsHTML;
+    } catch (e) {
+      container.innerHTML = "<p style='text-align:center; color:#ef4444;'>Raporlar yüklenemedi.</p>";
+    }
+  };
+
+  window.adminDeleteReportedPost = async function(postId, reportId) {
+    if (!confirm("Bu gönderiyi tamamen silmek istiyor musunuz?")) return;
+    try {
+      await deleteDoc(doc(db, "posts", postId));
+      await deleteDoc(doc(db, "reports", reportId));
+      alert("Gönderi silindi ve rapor temizlendi.");
+      loadAdminReports();
+    } catch (e) { alert("İşlem başarısız."); }
+  };
+
+  window.adminDismissReport = async function(reportId) {
+    try {
+      await deleteDoc(doc(db, "reports", reportId));
+      alert("Rapor kaldırıldı.");
+      loadAdminReports();
+    } catch (e) { alert("İşlem başarısız."); }
   };
 
   window.sharePost = function(postId) {
@@ -784,6 +932,7 @@
   window.handleAuthAction = async function(type) {
     const email = document.getElementById("authEmail").value.trim();
     const pass = document.getElementById("authPassword").value.trim();
+    const username = document.getElementById("authUsername") ? document.getElementById("authUsername").value.trim() : "";
     const errorBox = document.getElementById("authError");
     errorBox.innerText = "";
 
@@ -792,11 +941,28 @@
       return;
     }
 
+    if (type === 'register') {
+      if (!username) {
+        errorBox.innerText = "Lütfen bir kullanıcı adı seçin.";
+        return;
+      }
+      const regex = /^[a-z0-9_]+$/;
+      if (!regex.test(username)) {
+        errorBox.innerText = "Kullanıcı adı sadece küçük harf, rakam ve alt çizgi (_) içerebilir! (Örn: nuri_132)";
+        return;
+      }
+    }
+
     try {
       if (type === 'login') {
         await signInWithEmailAndPassword(auth, email, pass);
       } else {
-        await createUserWithEmailAndPassword(auth, email, pass);
+        const userCred = await createUserWithEmailAndPassword(auth, email, pass);
+        await setDoc(doc(db, "users", userCred.user.uid), {
+          profile_name: username,
+          profile_avatar: 'favicon.png',
+          profile_bio: 'Medipol Proficiency Adayı'
+        }, { merge: true });
         alert("Hesabınız başarıyla oluşturuldu!");
       }
     } catch (err) { errorBox.innerText = "Hata: " + err.message; }
@@ -1134,7 +1300,7 @@
     .profile-avatar-img { width: 34px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); background-size: cover; background-position: center; display: block; }
     .profile-avatar-preview { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #2563eb; display: block; margin: 10px 0; background-size: cover; background-position: center; }
 
-    /* DASHBOARD GRID CSS (MOBİL UYUMLU GÜÇLENDİRİLDİ) */
+    /* DASHBOARD GRID CSS */
     .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 20px; }
     .dash-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; cursor: pointer; }
     .dash-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); }
@@ -1142,7 +1308,6 @@
     .dash-title { font-size: 15px; font-weight: bold; color: var(--title-color); margin-bottom: 4px; }
     .dash-desc { font-size: 12px; color: var(--subtitle-color); line-height: 1.4; margin-bottom: 12px; }
 
-    /* TELEFON / MOBİL UYUMLULUK DÜZELTMELERİ */
     @media (max-width: 768px) {
         .mobile-header { display: flex; }
         .app-container { height: calc(100vh - 48px); }
@@ -1188,7 +1353,7 @@
     </div>
 </div>
 
-<!-- GİRİŞ MODALI -->
+<!-- GİRİŞ MODALI (KAYITTA KÜÇÜK HARF / RAKAM / _ KONTROLÜ) -->
 <div class="auth-overlay" id="authModal">
     <div class="auth-card" id="mainAuthCard">
         <h2>AWL Giriş</h2>
@@ -1205,6 +1370,7 @@
 
         <div class="auth-divider">veya e-posta ile</div>
 
+        <input type="text" id="authUsername" class="auth-input" placeholder="Kullanıcı Adı (örn: nuri_132)">
         <input type="email" id="authEmail" class="auth-input" placeholder="E-posta Adresiniz">
         <input type="password" id="authPassword" class="auth-input" placeholder="Şifreniz">
         <div class="auth-btn-group">
@@ -1278,6 +1444,7 @@
             <li onclick="switchView('spaced-view', this)">🧠 Akıllı Tekrar (Bugün)</li>
             <li onclick="switchView('forum-view', this)">💬 Akademik Forum</li>
             <li onclick="switchView('tureng-view', this)">🇹🇷 Tureng Sözlük</li>
+            <li id="adminMenuTab" style="display:none; color:#ef4444;" onclick="switchView('admin-view', this)">🛡️ Admin Paneli</li>
             <li onclick="switchView('settings-view', this)">⚙️ Ayarlar & Araçlar</li>
         </ul>
         
@@ -1343,7 +1510,7 @@
                     <div>
                         <div class="dash-icon">🔊</div>
                         <div class="dash-title">Sesli Çalışma Odası</div>
-                        <div class="dash-desc">Canlı sesli odaya bağlan, diğer öğrencilerle sesli çalış.</div>
+                        <div class="dash-desc">Canlı odaya bağlan, diğer öğrencilerle birlikte çalış.</div>
                     </div>
                     <button class="action-btn" style="background:#16a34a; color:white; border:none;">Odaya Gir →</button>
                 </div>
@@ -1357,6 +1524,16 @@
                     <button class="action-btn" style="background:#0284c7; color:white; border:none;">Foruma Göz At →</button>
                 </div>
             </div>
+        </div>
+
+        <!-- 🛡️ ADMIN RAPOR PANELI SEKMESİ -->
+        <div id="admin-view" class="view-section">
+            <header>
+                <h1>🛡️ Yönetici Rapor Paneli</h1>
+                <p class="subtitle">Kullanıcılar tarafından rapor edilen uygunsuz gönderileri denetle, sil veya yetki ver.</p>
+            </header>
+
+            <div id="adminReportsContainer"></div>
         </div>
 
         <!-- 🔊 SESLİ ODALAR (VOICE LOUNGE) SEKMESİ -->
@@ -1373,7 +1550,6 @@
 
                 <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
                     <button class="action-btn" id="voiceJoinBtn" style="background:#16a34a; color:white; border:none; padding:10px 20px; font-size:14px;" onclick="joinVoiceRoom()">🎤 Odaya Katıl</button>
-                    <button class="action-btn" id="voiceMuteBtn" style="display:none; padding:10px 20px; font-size:14px;" onclick="toggleMuteVoice()">🔇 Sesi Kapat</button>
                     <button class="action-btn" id="voiceLeaveBtn" style="display:none; background:#ef4444; color:white; border:none; padding:10px 20px; font-size:14px;" onclick="leaveVoiceRoom()">🚪 Odadan Ayrıl</button>
                 </div>
             </div>
@@ -2412,6 +2588,7 @@ function switchView(viewId, element) {
     if (viewId === 'badges-view') calculateBadgesAndXP();
     if (viewId === 'profile-view') updateProfileUI();
     if (viewId === 'forum-view') window.listenForumPosts();
+    if (viewId === 'admin-view') window.loadAdminReports();
 }
 
 window.addEventListener('hashchange', () => {
