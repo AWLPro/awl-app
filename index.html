@@ -44,6 +44,8 @@
 
   window.currentForumCategory = 'all';
   window.currentForumSort = 'createdAt';
+  window.currentGrammarCategory = 'tenses';
+  window.currentGrammarStage = 'learn';
 
   onAuthStateChanged(auth, async (user) => {
     const authModal = document.getElementById("authModal");
@@ -60,6 +62,8 @@
       calculateBadgesAndXP();
       updateProfileUI();
       renderDashboard();
+      renderGrammarLab();
+      listenNotifications();
       
       const currentHash = window.location.hash.replace('#', '');
       const savedView = currentHash || localStorage.getItem('last_active_view') || 'dashboard-view';
@@ -105,6 +109,81 @@
     } catch (e) { console.error(e); }
   };
 
+  // BİLDİRİM GÖNDERME
+  window.sendNotification = async function(targetUid, title, message, linkPostId = null) {
+    if (!targetUid || targetUid === window.fbUser.uid) return;
+    try {
+      await addDoc(collection(db, "users", targetUid, "notifications"), {
+        title: title,
+        message: message,
+        linkPostId: linkPostId,
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    } catch (e) { console.error("Bildirim gönderilemedi:", e); }
+  };
+
+  // BİLDİRİMLERİ CANLI DİNLEME
+  let unsubNotifs = null;
+  window.listenNotifications = function() {
+    if (!window.fbUser) return;
+    if (unsubNotifs) unsubNotifs();
+
+    const q = query(collection(db, "users", window.fbUser.uid, "notifications"), orderBy("createdAt", "desc"));
+    unsubNotifs = onSnapshot(q, (snap) => {
+      let unreadCount = 0;
+      const listContainer = document.getElementById("inboxNotificationList");
+      if (!listContainer) return;
+
+      if (snap.empty) {
+        listContainer.innerHTML = "<p style='font-size:11px; opacity:0.7; text-align:center; padding:10px;'>Henüz bildirimin yok.</p>";
+        document.getElementById("notifBadge").style.display = "none";
+        return;
+      }
+
+      listContainer.innerHTML = "";
+      snap.forEach(d => {
+        const notif = d.data();
+        const notifId = d.id;
+        if (!notif.read) unreadCount++;
+
+        const item = document.createElement("div");
+        item.style.background = notif.read ? "rgba(0,0,0,0.02)" : "rgba(37,99,235,0.08)";
+        item.style.borderLeft = notif.read ? "none" : "3px solid #2563eb";
+        item.style.padding = "8px 10px";
+        item.style.borderRadius = "6px";
+        item.style.marginBottom = "6px";
+        item.style.cursor = "pointer";
+        item.style.fontSize = "12px";
+
+        item.onclick = async () => {
+          await updateDoc(doc(db, "users", window.fbUser.uid, "notifications", notifId), { read: true });
+          if (notif.linkPostId) switchView('forum-view', null);
+          toggleInboxModal(false);
+        };
+
+        item.innerHTML = `
+          <strong style="display:block; font-size:11px; color:var(--title-color);">${notif.title}</strong>
+          <span style="opacity:0.9;">${notif.message}</span>
+        `;
+        listContainer.appendChild(item);
+      });
+
+      const badge = document.getElementById("notifBadge");
+      if (unreadCount > 0) {
+        badge.innerText = unreadCount;
+        badge.style.display = "inline-block";
+      } else {
+        badge.style.display = "none";
+      }
+    });
+  };
+
+  window.toggleInboxModal = function(show) {
+    const modal = document.getElementById("inboxModal");
+    if (modal) modal.style.display = show ? "flex" : "none";
+  };
+
   // FORUM GÖNDERİSİ PAYLAŞMA
   window.createForumPost = async function() {
     if (!window.fbUser || window.fbUser.isAnonymous) {
@@ -147,6 +226,61 @@
     }
   };
 
+  // TAKİP ET / TAKİPTEN ÇIK (FOLLOW / UNFOLLOW + BİLDİRİM)
+  window.toggleFollowUser = async function(targetUid) {
+    if (!window.fbUser || window.fbUser.isAnonymous) {
+      alert("Kullanıcıları takip etmek için giriş yapmalısınız.");
+      return;
+    }
+    if (window.fbUser.uid === targetUid) {
+      alert("Kendi kendinizi takip edemezsiniz.");
+      return;
+    }
+
+    try {
+      const followRef = doc(db, "users", window.fbUser.uid, "following", targetUid);
+      const followerRef = doc(db, "users", targetUid, "followers", window.fbUser.uid);
+      const docSnap = await getDoc(followRef);
+
+      const myName = getUserVal('profile_name') || window.fbUser.displayName || 'Bir öğrenci';
+
+      if (docSnap.exists()) {
+        await deleteDoc(followRef);
+        await deleteDoc(followerRef);
+      } else {
+        await setDoc(followRef, { createdAt: serverTimestamp() });
+        await setDoc(followerRef, { createdAt: serverTimestamp() });
+        sendNotification(targetUid, "👥 Yeni Takipçi!", `${myName} seni takip etmeye başladı.`);
+      }
+      openUserProfileModal(targetUid);
+    } catch (e) {
+      alert("Takip işlemi sırasında hata oluştu: " + e.message);
+    }
+  };
+
+  // BOOKMARK (GÖNDERİ KAYDETME)
+  window.toggleBookmarkPost = async function(postId) {
+    if (!window.fbUser || window.fbUser.isAnonymous) {
+      alert("Gönderileri kaydetmek için giriş yapmalısınız.");
+      return;
+    }
+
+    try {
+      const bmRef = doc(db, "users", window.fbUser.uid, "bookmarks", postId);
+      const bmSnap = await getDoc(bmRef);
+
+      if (bmSnap.exists()) {
+        await deleteDoc(bmRef);
+        alert("Gönderi kaydedilenlerden çıkarıldı.");
+      } else {
+        await setDoc(bmRef, { savedAt: serverTimestamp() });
+        alert("Gönderi başarıyla kaydedildi! 🔖");
+      }
+    } catch (e) {
+      alert("Kaydetme hatası: " + e.message);
+    }
+  };
+
   // KULLANICI PROFİL KARTINI AÇMA (MODAL)
   window.openUserProfileModal = async function(uid) {
     const modal = document.getElementById("userProfileModal");
@@ -161,6 +295,15 @@
       const name = userData.profile_name || 'Öğrenci';
       const avatar = userData.profile_avatar || 'favicon.png';
       const bio = userData.profile_bio || 'Medipol Proficiency Adayı';
+
+      const followersSnap = await getDocs(collection(db, "users", uid, "followers"));
+      const followingSnap = await getDocs(collection(db, "users", uid, "following"));
+
+      let isFollowing = false;
+      if (window.fbUser) {
+        const checkFollow = await getDoc(doc(db, "users", window.fbUser.uid, "following", uid));
+        isFollowing = checkFollow.exists();
+      }
 
       const q = query(collection(db, "posts"), where("authorUid", "==", uid));
       const postSnaps = await getDocs(q);
@@ -179,6 +322,8 @@
         `;
       });
 
+      const showFollowBtn = window.fbUser && (window.fbUser.uid !== uid);
+
       container.innerHTML = `
         <div style="text-align:center; position:relative;">
           <button style="position:absolute; top:-10px; right:-10px; background:none; border:none; font-size:18px; cursor:pointer;" onclick="closeUserProfileModal()">✕</button>
@@ -186,19 +331,33 @@
           <h2 style="margin:0; font-size:16px; color:var(--title-color);">${name}</h2>
           <p style="margin:4px 0 10px 0; font-size:12px; color:var(--subtitle-color);">${bio}</p>
           
+          ${showFollowBtn ? `
+            <button class="action-btn" style="background:${isFollowing ? '#16a34a' : '#2563eb'}; color:white; border:none; margin-bottom:12px; width:100%;" onclick="toggleFollowUser('${uid}')">
+              ${isFollowing ? '✔ Takip Ediliyorsun' : '➕ Takip Et'}
+            </button>
+          ` : ''}
+
           <div style="display:flex; justify-content:space-around; background:rgba(37,99,235,0.08); padding:8px; border-radius:8px; margin-bottom:12px;">
             <div>
-              <div style="font-size:14px; font-weight:bold; color:#2563eb;">${postSnaps.size}</div>
+              <div style="font-size:13px; font-weight:bold; color:#2563eb;">${postSnaps.size}</div>
               <div style="font-size:10px; opacity:0.8;">Gönderi</div>
             </div>
             <div>
-              <div style="font-size:14px; font-weight:bold; color:#16a34a;">${totalVotes}</div>
-              <div style="font-size:10px; opacity:0.8;">Karma (Oy)</div>
+              <div style="font-size:13px; font-weight:bold; color:#16a34a;">${totalVotes}</div>
+              <div style="font-size:10px; opacity:0.8;">Karma</div>
+            </div>
+            <div>
+              <div style="font-size:13px; font-weight:bold; color:#8b5cf6;">${followersSnap.size}</div>
+              <div style="font-size:10px; opacity:0.8;">Takipçi</div>
+            </div>
+            <div>
+              <div style="font-size:13px; font-weight:bold; color:#0284c7;">${followingSnap.size}</div>
+              <div style="font-size:10px; opacity:0.8;">Takip Edilen</div>
             </div>
           </div>
 
           <h4 style="margin:10px 0 4px 0; text-align:left; font-size:13px; color:var(--title-color);">Son Gönderileri:</h4>
-          <div style="max-height:150px; overflow-y:auto;">
+          <div style="max-height:140px; overflow-y:auto;">
             ${postListHTML || "<p style='font-size:11px; opacity:0.7; text-align:left;'>Henüz gönderisi yok.</p>"}
           </div>
         </div>
@@ -247,11 +406,30 @@
 
   // CANLI FORUM DİNLEYİCİSİ
   let unsubscribePosts = null;
-  window.listenForumPosts = function() {
+  window.listenForumPosts = async function() {
     const feed = document.getElementById("forumFeed");
     if (!feed) return;
 
     if (unsubscribePosts) unsubscribePosts();
+
+    if (window.currentForumCategory === 'bookmarks') {
+      if (!window.fbUser) {
+        feed.innerHTML = "<p style='text-align:center; opacity:0.7;'>Kaydedilen gönderilerinizi görmek için giriş yapmalısınız.</p>";
+        return;
+      }
+      const bmSnaps = await getDocs(collection(db, "users", window.fbUser.uid, "bookmarks"));
+      if (bmSnaps.empty) {
+        feed.innerHTML = "<p style='text-align:center; opacity:0.7;'>Henüz hiç gönderi kaydetmediniz. 🔖 butonuna basarak kaydedebilirsiniz!</p>";
+        return;
+      }
+      const bmIds = bmSnaps.docs.map(d => d.id);
+      feed.innerHTML = "";
+      bmIds.forEach(async (pId) => {
+        const pSnap = await getDoc(doc(db, "posts", pId));
+        if (pSnap.exists()) renderSinglePostCard(pSnap, feed);
+      });
+      return;
+    }
 
     let postsRef = collection(db, "posts");
     let q;
@@ -273,67 +451,12 @@
       feed.innerHTML = "";
       querySnapshot.forEach((docSnap) => {
         const post = docSnap.data();
-        const postId = docSnap.id;
-
         if (searchQuery) {
           const matchTitle = (post.title || "").toLowerCase().includes(searchQuery);
           const matchContent = (post.content || "").toLowerCase().includes(searchQuery);
           if (!matchTitle && !matchContent) return;
         }
-
-        const postCard = document.createElement("div");
-        postCard.className = "essay-card";
-        postCard.style.marginBottom = "12px";
-
-        const voteCount = post.votes || 0;
-        const commentCount = post.commentCount || 0;
-        const isOwner = window.fbUser && (window.fbUser.uid === post.authorUid);
-
-        postCard.innerHTML = `
-          <div style="display:flex; gap:12px; align-items:flex-start;">
-            <div style="display:flex; flex-direction:column; align-items:center; background:rgba(0,0,0,0.05); padding:6px 8px; border-radius:8px;">
-              <button class="action-btn" style="padding:2px 8px; font-size:14px;" onclick="votePost('${postId}', 1)">▲</button>
-              <span style="font-size:12px; font-weight:bold; margin:4px 0;" id="vote-score-${postId}">${voteCount}</span>
-              <button class="action-btn" style="padding:2px 8px; font-size:14px;" onclick="votePost('${postId}', -1)">▼</button>
-            </div>
-
-            <div style="flex:1;">
-              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
-                <div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="openUserProfileModal('${post.authorUid}')">
-                  <img src="${post.authorAvatar || 'favicon.png'}" class="profile-avatar-img" alt="Avatar">
-                  <div>
-                    <strong style="font-size:13px; text-decoration:underline;">${post.authorName || 'Kullanıcı'}</strong>
-                    <span class="program-badge" style="margin-left:6px;">${post.category || 'Genel'}</span>
-                  </div>
-                </div>
-                <div style="display:flex; gap:6px;">
-                  <button class="action-btn" style="padding:2px 6px; font-size:11px;" onclick="sharePost('${postId}')">🔗 Paylaş</button>
-                  <button class="action-btn" style="padding:2px 6px; font-size:11px; color:#eab308;" onclick="reportPost('${postId}')">🚨 Bildir</button>
-                  ${isOwner ? `<button class="action-btn" style="padding:2px 6px; font-size:11px; color:#ef4444;" onclick="deletePost('${postId}')">🗑️ Sil</button>` : ''}
-                </div>
-              </div>
-
-              <h3 style="margin:8px 0 4px 0; font-size:16px; color:var(--title-color);">${post.title}</h3>
-              <p style="margin:0 0 10px 0; font-size:13px; line-height:1.5; opacity:0.9; white-space:pre-wrap;">${post.content}</p>
-
-              <div style="display:flex; gap:10px; align-items:center;">
-                <button class="action-btn" style="font-size:11px;" onclick="toggleComments('${postId}', '${post.authorUid}', '${post.bestCommentId || ''}')">💬 ${commentCount} Yorum</button>
-              </div>
-
-              <div id="comments-section-${postId}" style="display:none; margin-top:12px; border-top:1px solid var(--border); padding-top:10px;">
-                <div id="comments-list-${postId}" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
-                  <p style="font-size:11px; opacity:0.7;">Yorumlar yükleniyor...</p>
-                </div>
-
-                <div style="display:flex; gap:6px;">
-                  <input type="text" id="comment-input-${postId}" class="auth-input" style="margin:0; font-size:12px;" placeholder="Bir yorum yaz...">
-                  <button class="action-btn" style="background:#2563eb; color:white; border:none; padding:6px 12px; white-space:nowrap;" onclick="addComment('${postId}')">Gönder</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        `;
-        feed.appendChild(postCard);
+        renderSinglePostCard(docSnap, feed);
       });
 
       if (feed.children.length === 0) {
@@ -343,6 +466,66 @@
       feed.innerHTML = "<p style='text-align:center; color:#ef4444;'>Canlı bağlantı hatası oluştu.</p>";
     });
   };
+
+  function renderSinglePostCard(docSnap, feed) {
+    const post = docSnap.data();
+    const postId = docSnap.id;
+
+    const postCard = document.createElement("div");
+    postCard.className = "essay-card";
+    postCard.style.marginBottom = "12px";
+
+    const voteCount = post.votes || 0;
+    const commentCount = post.commentCount || 0;
+    const isOwner = window.fbUser && (window.fbUser.uid === post.authorUid);
+
+    postCard.innerHTML = `
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <div style="display:flex; flex-direction:column; align-items:center; background:rgba(0,0,0,0.05); padding:6px 8px; border-radius:8px;">
+          <button class="action-btn" style="padding:2px 8px; font-size:14px;" onclick="votePost('${postId}', 1)">▲</button>
+          <span style="font-size:12px; font-weight:bold; margin:4px 0;" id="vote-score-${postId}">${voteCount}</span>
+          <button class="action-btn" style="padding:2px 8px; font-size:14px;" onclick="votePost('${postId}', -1)">▼</button>
+        </div>
+
+        <div style="flex:1;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+            <div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="openUserProfileModal('${post.authorUid}')">
+              <img src="${post.authorAvatar || 'favicon.png'}" class="profile-avatar-img" alt="Avatar">
+              <div>
+                <strong style="font-size:13px; text-decoration:underline;">${post.authorName || 'Kullanıcı'}</strong>
+                <span class="program-badge" style="margin-left:6px;">${post.category || 'Genel'}</span>
+              </div>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="action-btn" style="padding:2px 6px; font-size:11px;" onclick="toggleBookmarkPost('${postId}')">🔖 Kaydet</button>
+              <button class="action-btn" style="padding:2px 6px; font-size:11px;" onclick="sharePost('${postId}')">🔗 Paylaş</button>
+              <button class="action-btn" style="padding:2px 6px; font-size:11px; color:#eab308;" onclick="reportPost('${postId}')">🚨 Bildir</button>
+              ${isOwner ? `<button class="action-btn" style="padding:2px 6px; font-size:11px; color:#ef4444;" onclick="deletePost('${postId}')">🗑️ Sil</button>` : ''}
+            </div>
+          </div>
+
+          <h3 style="margin:8px 0 4px 0; font-size:16px; color:var(--title-color);">${post.title}</h3>
+          <p style="margin:0 0 10px 0; font-size:13px; line-height:1.5; opacity:0.9; white-space:pre-wrap;">${post.content}</p>
+
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button class="action-btn" style="font-size:11px;" onclick="toggleComments('${postId}', '${post.authorUid}', '${post.bestCommentId || ''}')">💬 ${commentCount} Yorum</button>
+          </div>
+
+          <div id="comments-section-${postId}" style="display:none; margin-top:12px; border-top:1px solid var(--border); padding-top:10px;">
+            <div id="comments-list-${postId}" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+              <p style="font-size:11px; opacity:0.7;">Yorumlar yükleniyor...</p>
+            </div>
+
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="comment-input-${postId}" class="auth-input" style="margin:0; font-size:12px;" placeholder="@kullanıcı şeklinde etiketleyip yorum yazın...">
+              <button class="action-btn" style="background:#2563eb; color:white; border:none; padding:6px 12px; white-space:nowrap;" onclick="addComment('${postId}', '${post.authorUid}')">Gönder</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    feed.appendChild(postCard);
+  }
 
   window.filterForumCategory = function(cat, btn) {
     window.currentForumCategory = cat;
@@ -402,7 +585,7 @@
     }
   };
 
-  // CANLI YORUM DİNLEYİCİSİ
+  // CANLI YORUM DİNLEYİCİSİ (@MENTION VE BİLDİRİM DESTEKLİ)
   const commentUnsubscribers = {};
   window.listenComments = function(postId, postAuthorUid, bestCommentId) {
     const list = document.getElementById(`comments-list-${postId}`);
@@ -424,6 +607,8 @@
         const isCommentOwner = window.fbUser && (window.fbUser.uid === c.authorUid);
         const isBest = (bestCommentId === commentId);
 
+        let formattedText = c.text.replace(/@(\w+)/g, '<span style="color:#2563eb; font-weight:bold; background:rgba(37,99,235,0.1); padding:0 4px; border-radius:3px;">@$1</span>');
+
         const cBox = document.createElement("div");
         cBox.style.background = isBest ? "rgba(22, 163, 74, 0.1)" : "rgba(0,0,0,0.03)";
         cBox.style.border = isBest ? "1px solid #16a34a" : "none";
@@ -439,20 +624,21 @@
               ${isBest ? `<span style="color:#16a34a; font-weight:bold; font-size:10px;">✅ EN İYİ CEVAP</span>` : ''}
             </div>
             <div style="display:flex; gap:4px;">
-              ${isPostOwner && !isBest ? `<button class="action-btn" style="padding:1px 4px; font-size:10px; color:#16a34a;" onclick="setBestComment('${postId}', '${commentId}')">✅ En İyi Seç</button>` : ''}
+              ${isPostOwner && !isBest ? `<button class="action-btn" style="padding:1px 4px; font-size:10px; color:#16a34a;" onclick="setBestComment('${postId}', '${commentId}', '${c.authorUid}')">✅ En İyi Seç</button>` : ''}
               ${isCommentOwner ? `<button class="action-btn" style="padding:1px 4px; font-size:10px; color:#ef4444;" onclick="deleteComment('${postId}', '${commentId}')">🗑️</button>` : ''}
             </div>
           </div>
-          <p style="margin:0; opacity:0.9; line-height:1.3;">${c.text}</p>
+          <p style="margin:0; opacity:0.9; line-height:1.3;">${formattedText}</p>
         `;
         list.appendChild(cBox);
       });
     });
   };
 
-  window.setBestComment = async function(postId, commentId) {
+  window.setBestComment = async function(postId, commentId, commentAuthorUid) {
     try {
       await updateDoc(doc(db, "posts", postId), { bestCommentId: commentId });
+      sendNotification(commentAuthorUid, "🏆 En İyi Cevap!", "Tebrikler! Yorumun gönderi sahibi tarafından En İyi Cevap seçildi.", postId);
       alert("En iyi cevap seçildi!");
     } catch (e) {
       alert("İşlem başarısız.");
@@ -469,7 +655,8 @@
     }
   };
 
-  window.addComment = async function(postId) {
+  // YORUM EKLEME + BİLDİRİM VE @MENTION TETİKLEYİCİSİ
+  window.addComment = async function(postId, postAuthorUid) {
     if (!window.fbUser || window.fbUser.isAnonymous) {
       alert("Yorum yapmak için e-posta veya Google ile giriş yapmalısınız.");
       return;
@@ -494,6 +681,9 @@
 
       const postRef = doc(db, "posts", postId);
       await updateDoc(postRef, { commentCount: increment(1) });
+
+      // GÖNDERİ SAHİBİNE YORUM BİLDİRİMİ GÖNDERME
+      sendNotification(postAuthorUid, "💬 Yeni Yorum!", `${authorName} gönderine yorum yaptı.`, postId);
 
       input.value = "";
     } catch (e) {
@@ -690,6 +880,7 @@
 
     .app-container { display: flex; flex: 1; height: calc(100vh - 50px); overflow: hidden; position: relative; }
 
+    /* SOL MENÜ DÜZENLEMESİ: KAYDIRMA ÇUBUĞU (SCROLLBAR) DESTEĞİ */
     .sidebar {
         width: 260px;
         background-color: var(--sidebar-bg);
@@ -700,6 +891,15 @@
         flex-shrink: 0;
         transition: transform 0.3s ease;
         z-index: 99;
+        overflow-y: auto;
+    }
+
+    .sidebar::-webkit-scrollbar {
+        width: 6px;
+    }
+    .sidebar::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 3px;
     }
 
     .sidebar-logo-container { padding: 0 20px 15px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); display: flex; align-items: center; gap: 12px; }
@@ -846,7 +1046,7 @@
 
     /* DASHBOARD GRID CSS */
     .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .dash-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; }
+    .dash-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; cursor: pointer; }
     .dash-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); }
     .dash-icon { font-size: 28px; margin-bottom: 8px; }
     .dash-title { font-size: 15px; font-weight: bold; color: var(--title-color); margin-bottom: 4px; }
@@ -873,6 +1073,19 @@
         <img src="logo.gif" alt="Logo" style="width: 24px; height: 24px; object-fit: contain;"> AWL
     </span>
     <button class="menu-toggle-btn" onclick="toggleMobileSidebar()">☰ Menü</button>
+</div>
+
+<!-- GELEN KUTUSU / BİLDİRİM MODALI -->
+<div class="auth-overlay" id="inboxModal" style="display:none;">
+    <div class="auth-card" style="max-width:400px; padding:20px; text-align:left;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="margin:0; color:var(--title-color);">📩 Gelen Kutusu & Bildirimler</h3>
+            <button style="background:none; border:none; font-size:18px; cursor:pointer;" onclick="toggleInboxModal(false)">✕</button>
+        </div>
+        <div id="inboxNotificationList" style="max-height:300px; overflow-y:auto;">
+            <p style="font-size:11px; opacity:0.7; text-align:center;">Yükleniyor...</p>
+        </div>
+    </div>
 </div>
 
 <!-- BAŞKASININ PROFİLİNİ GÖRÜNTÜLEME MODALI -->
@@ -944,7 +1157,14 @@
                     <span class="user-level-tag" id="userLevelDisplay">Lvl 1 • 0 XP</span>
                 </div>
             </div>
-            <span style="font-size:10px;">▼</span>
+            
+            <div style="display:flex; align-items:center; gap:6px;">
+                <button style="background:none; border:none; cursor:pointer; font-size:16px; position:relative;" onclick="toggleInboxModal(true)">
+                    🔔
+                    <span id="notifBadge" style="display:none; position:absolute; top:-4px; right:-6px; background:#ef4444; color:white; font-size:9px; font-weight:bold; padding:2px 5px; border-radius:10px;">0</span>
+                </button>
+                <span style="font-size:10px;">▼</span>
+            </div>
 
             <!-- DROPDOWN MENU -->
             <div class="profile-dropdown-menu">
@@ -957,6 +1177,7 @@
         <ul class="sidebar-menu">
             <li class="active" onclick="switchView('dashboard-view', this)">🏠 Ana Sayfa</li>
             <li onclick="switchView('program-view', this)">📅 Çalışma Programı</li>
+            <li onclick="switchView('grammar-view', this)">🧩 Grammar Lab</li>
             <li onclick="switchView('listening-view', this)">🎧 Podcast & Listening</li>
             <li onclick="switchView('vocab-view', this)">📚 Kelime İstasyonu</li>
             <li onclick="switchView('essay-view', this)">✍️ Mini Essay Sandbox</li>
@@ -980,7 +1201,7 @@
     <!-- ANA İÇERİK -->
     <div class="main-content" onclick="closeMobileSidebarIfOpen()">
 
-        <!-- 🏠 YENİ ANA SAYFA (DASHBOARD) SEKMESİ -->
+        <!-- 🏠 ANA SAYFA (DASHBOARD) SEKMESİ -->
         <div id="dashboard-view" class="view-section active">
             <div class="essay-card" style="margin-bottom:20px; background:linear-gradient(135deg, rgba(37,99,235,0.1), rgba(59,130,246,0.05)); border-color:var(--sidebar-active);">
                 <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
@@ -1015,6 +1236,15 @@
                     <button class="action-btn" style="background:#2563eb; color:white; border:none;">Programa Git →</button>
                 </div>
 
+                <div class="dash-card" onclick="switchView('grammar-view', null)">
+                    <div>
+                        <div class="dash-icon">🧩</div>
+                        <div class="dash-title">Grammar Lab</div>
+                        <div class="dash-desc">9 kritik gramer konusunu interaktif aşamalarla öğren.</div>
+                    </div>
+                    <button class="action-btn" style="background:#eab308; color:white; border:none;">Laboratuvara Gir →</button>
+                </div>
+
                 <div class="dash-card" onclick="switchView('spaced-view', null)">
                     <div>
                         <div class="dash-icon">🧠</div>
@@ -1022,15 +1252,6 @@
                         <div class="dash-desc">Unutma eğrisine göre bugün tekrar etmen gereken kelimeler.</div>
                     </div>
                     <button class="action-btn" style="background:#16a34a; color:white; border:none;">Tekrarlara Başla →</button>
-                </div>
-
-                <div class="dash-card" onclick="switchView('essay-view', null)">
-                    <div>
-                        <div class="dash-icon">✍️</div>
-                        <div class="dash-title">Mini Essay Sandbox</div>
-                        <div class="dash-desc">Seçtiğin kelimelerle akademik paragraf yaz ve AI analizi al.</div>
-                    </div>
-                    <button class="action-btn" style="background:#8b5cf6; color:white; border:none;">Yazmaya Başla →</button>
                 </div>
 
                 <div class="dash-card" onclick="switchView('forum-view', null)">
@@ -1042,6 +1263,37 @@
                     <button class="action-btn" style="background:#0284c7; color:white; border:none;">Foruma Göz At →</button>
                 </div>
             </div>
+        </div>
+
+        <!-- 🧩 GRAMMAR LAB SEKMESİ -->
+        <div id="grammar-view" class="view-section">
+            <header>
+                <h1>🧩 Grammar Lab (İnteraktif Gramer Laboratuvarı)</h1>
+                <p class="subtitle">9 Kritik Akademik Gramer Konusu • Öğren, Pratik Yap, Hatalarını İncele ve Tekrar Et.</p>
+            </header>
+
+            <!-- KATEGORİ SEÇİM TABS -->
+            <div class="tabs-container" id="grammarCatTabs">
+                <button class="tab-btn active" onclick="switchGrammarCat('tenses', this)">Zamanlar (Tenses)</button>
+                <button class="tab-btn" onclick="switchGrammarCat('conditionals', this)">Conditionals</button>
+                <button class="tab-btn" onclick="switchGrammarCat('passive', this)">Passive Voice</button>
+                <button class="tab-btn" onclick="switchGrammarCat('relative', this)">Relative Clauses</button>
+                <button class="tab-btn" onclick="switchGrammarCat('modals', this)">Modals</button>
+                <button class="tab-btn" onclick="switchGrammarCat('articles', this)">Articles</button>
+                <button class="tab-btn" onclick="switchGrammarCat('prepositions', this)">Prepositions</button>
+                <button class="tab-btn" onclick="switchGrammarCat('conjunctions', this)">Conjunctions</button>
+                <button class="tab-btn" onclick="switchGrammarCat('academic', this)">Academic Grammar</button>
+            </div>
+
+            <!-- AŞAMA SEÇİM TABS -->
+            <div class="tabs-container" style="margin-bottom:20px; background:rgba(0,0,0,0.03); padding:6px; border-radius:8px;">
+                <button class="tab-btn active" id="gStageLearn" style="background:#2563eb; color:white;" onclick="switchGrammarStage('learn')">📚 Learn (Öğren)</button>
+                <button class="tab-btn" id="gStagePractice" onclick="switchGrammarStage('practice')">✍️ Practice (Pratik)</button>
+                <button class="tab-btn" id="gStageMistakes" onclick="switchGrammarStage('mistakes')">❌ Mistakes (Hatalarım)</button>
+                <button class="tab-btn" id="gStageReview" onclick="switchGrammarStage('review')">🔄 Review (Özet Tekrar)</button>
+            </div>
+
+            <div class="essay-card" id="grammarLabContent"></div>
         </div>
 
         <!-- ÇALIŞMA PROGRAMI SEKMESİ -->
@@ -1083,6 +1335,7 @@
                 <button class="tab-btn" onclick="filterForumCategory('❓ Gramer Sorusu', this)">❓ Gramer Sorusu</button>
                 <button class="tab-btn" onclick="filterForumCategory('💡 Sınav Taktikleri', this)">💡 Sınav Taktikleri</button>
                 <button class="tab-btn" onclick="filterForumCategory('💬 Genel Sohbet', this)">💬 Genel Sohbet</button>
+                <button class="tab-btn" onclick="filterForumCategory('bookmarks', this)">🔖 Kaydedilenlerim</button>
             </div>
 
             <!-- GÖNDERİ PAYLAŞMA KUTUSU -->
@@ -1324,6 +1577,175 @@ const badgeDefinitions = [
     { id: "b_vocab_star", title: "Favori Avcısı", icon: "⭐", desc: "En az 5 kelimeyi favorilerine ekle." },
     { id: "b_note_taker", title: "Not Tutucu", icon: "🎧", desc: "Listening bölümünde ilk dinleme notunu kaydet." }
 ];
+
+// GRAMMAR LAB VERİ ALTYAPISI
+const grammarData = {
+    tenses: {
+        title: "Zamanlar (Tenses)",
+        learn: "Akademik İngilizcede en sık kullanılan zamanlar <b>Present Simple</b>, <b>Present Perfect</b> ve <b>Past Simple</b>'dır.<br><br>💡 <b>Akademik İpucu:</b> Araştırma bulgularından bahsederken Present Perfect ('Studies have shown...'), tarihsel olaylardan bahsederken Past Simple kullanılır.",
+        practice: [
+            { q: "Researchers _______ a new method for data analysis recently.", options: ["developed", "have developed", "develop"], a: 1 }
+        ],
+        review: "📌 <b>Özet:</b> Akademik metinlerde genel geçer doğrular için Present Simple, güncelliğini koruyan çalışmalar için Present Perfect tercih edilir."
+    },
+    conditionals: {
+        title: "Conditionals (Şart Cümleleri)",
+        learn: "Akademik varsayımlarda ve hipotezlerde <b>Type 2</b> ve <b>Type 3</b> şart cümleleri sıklıkla kullanılır.<br><br>💡 <b>Örnek:</b> If variables were controlled, the results would be more accurate.",
+        practice: [
+            { q: "If the temperature _______, the chemical reaction would stop.", options: ["dropped", "drops", "had dropped"], a: 0 }
+        ],
+        review: "📌 <b>Özet:</b> Type 2 (Gerçek dışı durumlar): If + Past, Would + V1.<br>Type 3 (Geçmiş pişmanlık/varsayım): If + Had V3, Would have V3."
+    },
+    passive: {
+        title: "Passive Voice (Edilgen Yapı)",
+        learn: "Akademik makalelerin temel taşıdır. Odağı 'yapan kişiden' (özne) ziyade 'yapılan işe' çeker.<br><br>💡 <b>Örnek:</b> The experiment was conducted in the laboratory.",
+        practice: [
+            { q: "The samples _______ at room temperature before testing.", options: ["were stored", "stored", "are storing"], a: 0 }
+        ],
+        review: "📌 <b>Özet:</b> Formül: Be + V3. Yapan kişi önemsiz veya bilinen durumlarda 'by' kullanılmasına gerek yoktur."
+    },
+    relative: {
+        title: "Relative Clauses (Sıfat Cümlecikleri)",
+        learn: "İki cümleyi birleştirerek akademide daha kompleks ve akıcı cümleler kurmayı sağlar.<br><br>💡 <b>Örnek:</b> The theory <i>which was proposed in 1990</i> is still valid.",
+        practice: [
+            { q: "The scientist _______ discovered the formula won an award.", options: ["who", "which", "whose"], a: 0 }
+        ],
+        review: "📌 <b>Özet:</b> İnsanlar için <b>who</b>, nesneler/kavramlar için <b>which/that</b>, sahiplik için <b>whose</b> kullanılır."
+    },
+    modals: {
+        title: "Modals (Kip Fiilleri)",
+        learn: "Akademik dilde kesinlik derecesini (Hedging) ayarlamak için <b>may, might, could</b> kullanılır.<br><br>💡 <b>Örnek:</b> These findings <i>may indicate</i> a new trend.",
+        practice: [
+            { q: "The data _______ suggest a connection between stress and performance.", options: ["might", "must to", "should to"], a: 0 }
+        ],
+        review: "📌 <b>Özet:</b> İddialarını yumuşatmak ve %100 kesin konuşmamak için 'may / might / could' tercih et."
+    },
+    articles: {
+        title: "Articles (a / an / the)",
+        learn: "Genel kavramlardan bahsederken article kullanılmaz (sayılamayan/çoğul), bilinen veya spesifik isimlerde <b>the</b> kullanılır.<br><br>💡 <b>Örnek:</b> <i>Water</i> is essential. / <i>The water</i> in this lake is polluted.",
+        practice: [
+            { q: "___ global warming is a threat to biodiversity.", options: ["The", "A", "— (No Article)"], a: 2 }
+        ],
+        review: "📌 <b>Özet:</b> Soyut kavramlar ve genel isimlerden önce 'The' getirilmez."
+    },
+    prepositions: {
+        title: "Prepositions (Edatlar)",
+        learn: "Akademik kelimeler genellikle sabit edatlarla kullanılır (Collocations).<br><br>💡 <b>Örnek:</b> Depend <b>on</b>, consist <b>of</b>, lead <b>to</b>.",
+        practice: [
+            { q: "This study focuses _______ the economic effects of climate change.", options: ["on", "in", "at"], a: 0 }
+        ],
+        review: "📌 <b>Özet:</b> Preposition'lar kuraldan ziyade kelime kalıbı (collocation) olarak ezberlenmelidir."
+    },
+    conjunctions: {
+        title: "Conjunctions (Bağlaçlar)",
+        learn: "Akademik yazımın (Essay) bel kemiğidir.<br><br>💡 <b>Karşıtlık:</b> However, Although, Despite.<br>💡 <b>Sonuç:</b> Therefore, Thus, Consequently.",
+        practice: [
+            { q: "_______ the bad weather, the team completed the survey.", options: ["Despite", "Although", "However"], a: 0 }
+        ],
+        review: "📌 <b>Özet:</b> Despite + Noun/Ving | Although + Sentence | However, + Sentence."
+    },
+    academic: {
+        title: "Academic Grammar & Inversion",
+        learn: "İleri düzey akademik anlatım biçimidir. Vurguyu artırmak için devrik cümle (Inversion) kullanılır.<br><br>💡 <b>Örnek:</b> Not only <i>did they find</i> the solution, but they also patented it.",
+        practice: [
+            { q: "Rarely _______ such a significant discovery.", options: ["scientists make", "do scientists make", "scientists are making"], a: 1 }
+        ],
+        review: "📌 <b>Özet:</b> Cümle başına 'Hardly, Seldom, Rarely, Not only' geldiğinde yardımcı fiil başa geçer."
+    }
+};
+
+function switchGrammarCat(catKey, btn) {
+    window.currentGrammarCategory = catKey;
+    document.querySelectorAll('#grammarCatTabs .tab-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    renderGrammarLab();
+}
+
+function switchGrammarStage(stage) {
+    window.currentGrammarStage = stage;
+    const stages = ['learn', 'practice', 'mistakes', 'review'];
+    stages.forEach(s => {
+        const b = document.getElementById(`gStage${s.charAt(0).toUpperCase() + s.slice(1)}`);
+        if (b) {
+            b.style.background = (s === stage) ? '#2563eb' : 'var(--card-bg)';
+            b.style.color = (s === stage) ? '#ffffff' : 'var(--text)';
+        }
+    });
+    renderGrammarLab();
+}
+
+function renderGrammarLab() {
+    const box = document.getElementById("grammarLabContent");
+    if (!box) return;
+
+    const data = grammarData[window.currentGrammarCategory] || grammarData.tenses;
+    const stage = window.currentGrammarStage;
+
+    if (stage === 'learn') {
+        box.innerHTML = `
+            <h3 style="margin-top:0; color:var(--title-color);">${data.title} - Öğrenim Paneli</h3>
+            <p style="font-size:13px; line-height:1.6;">${data.learn}</p>
+        `;
+    } else if (stage === 'practice') {
+        let qHTML = "";
+        data.practice.forEach((item, idx) => {
+            let optHTML = "";
+            item.options.forEach((opt, oIdx) => {
+                optHTML += `<button class="action-btn" style="margin-right:6px; margin-top:4px;" onclick="checkGrammarAns(${idx}, ${oIdx}, ${item.a})">${opt}</button>`;
+            });
+            qHTML += `
+                <div style="margin-bottom:15px; padding:10px; background:rgba(0,0,0,0.02); border-radius:6px;">
+                    <p style="font-size:13px; font-weight:bold; margin-top:0;">${idx+1}. ${item.q}</p>
+                    <div>${optHTML}</div>
+                    <div id="gAnsResult-${idx}" style="font-size:12px; margin-top:6px; font-weight:bold;"></div>
+                </div>
+            `;
+        });
+        box.innerHTML = `
+            <h3 style="margin-top:0; color:var(--title-color);">${data.title} - Pratik Sınavı</h3>
+            ${qHTML}
+        `;
+    } else if (stage === 'mistakes') {
+        const mistakes = JSON.parse(localStorage.getItem('grammar_mistakes') || '[]');
+        if (mistakes.length === 0) {
+            box.innerHTML = `<p style="font-size:13px; opacity:0.7;">🎉 Harika! Henüz hiç gramer hatan yok.</p>`;
+        } else {
+            let mHTML = "";
+            mistakes.forEach((m, i) => {
+                mHTML += `<div style="padding:8px; background:rgba(239, 68, 68, 0.08); border-left:3px solid #ef4444; border-radius:4px; margin-bottom:8px; font-size:12px;">❌ ${m}</div>`;
+            });
+            box.innerHTML = `
+                <h3 style="margin-top:0; color:#ef4444;">Hata Depom</h3>
+                ${mHTML}
+                <button class="action-btn" style="background:#ef4444; color:white; border:none;" onclick="localStorage.removeItem('grammar_mistakes'); renderGrammarLab();">🗑️ Hataları Temizle</button>
+            `;
+        }
+    } else if (stage === 'review') {
+        box.innerHTML = `
+            <h3 style="margin-top:0; color:var(--title-color);">${data.title} - 1 Dakikalık Özet</h3>
+            <p style="font-size:13px; line-height:1.6;">${data.review}</p>
+        `;
+    }
+}
+
+function checkGrammarAns(qIdx, selectedOpt, correctAns) {
+    const resBox = document.getElementById(`gAnsResult-${qIdx}`);
+    if (selectedOpt === correctAns) {
+        resBox.style.color = "#16a34a";
+        resBox.innerText = "✓ Tebrikler! Doğru Cevap.";
+    } else {
+        resBox.style.color = "#ef4444";
+        resBox.innerText = "✕ Yanlış cevap! Hataların arasına eklendi.";
+        
+        const data = grammarData[window.currentGrammarCategory];
+        let mistakes = JSON.parse(localStorage.getItem('grammar_mistakes') || '[]');
+        const errorText = `${data.title}: ${data.practice[qIdx].q}`;
+        if (!mistakes.includes(errorText)) {
+            mistakes.push(errorText);
+            localStorage.setItem('grammar_mistakes', JSON.stringify(mistakes));
+        }
+    }
+}
 
 function renderDashboardWord() {
     const randomIndex = Math.floor(Math.random() * wordsData.length);
@@ -1868,6 +2290,7 @@ function switchView(viewId, element) {
 
     if (viewId === 'dashboard-view') renderDashboard();
     if (viewId === 'program-view') renderProgram();
+    if (viewId === 'grammar-view') renderGrammarLab();
     if (viewId === 'spaced-view') renderDueWords();
     if (viewId === 'tureng-view') renderTurengQuickLinks();
     if (viewId === 'badges-view') calculateBadgesAndXP();
