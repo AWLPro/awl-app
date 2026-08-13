@@ -12,7 +12,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, getDocs, query, orderBy, serverTimestamp, increment, runTransaction, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, addDoc, getDocs, query, orderBy, where, serverTimestamp, increment, runTransaction, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
   import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
   const firebaseConfig = {
@@ -42,6 +42,9 @@
   window.firebaseDb = db;
   window.fbUser = null;
 
+  window.currentForumCategory = 'all';
+  window.currentForumSort = 'createdAt';
+
   onAuthStateChanged(auth, async (user) => {
     const authModal = document.getElementById("authModal");
     const userProfileBar = document.getElementById("userProfileBar");
@@ -57,7 +60,6 @@
       calculateBadgesAndXP();
       updateProfileUI();
       
-      // SAYFA YENİLENDİĞİNDE KALINAN SEKMEYİ AÇMA HAFİZASI
       const currentHash = window.location.hash.replace('#', '');
       const savedView = currentHash || localStorage.getItem('last_active_view') || 'program-view';
       const targetMenuItem = document.querySelector(`.sidebar-menu li[onclick*="'${savedView}'"]`);
@@ -131,6 +133,7 @@
         authorAvatar: authorAvatar,
         votes: 0,
         commentCount: 0,
+        bestCommentId: null,
         createdAt: serverTimestamp()
       });
 
@@ -141,6 +144,39 @@
     }
   };
 
+  // GÖNDERİ SİLME
+  window.deletePost = async function(postId) {
+    if (!confirm("Bu gönderiyi silmek istediğinize emin misiniz?")) return;
+    try {
+      await deleteDoc(doc(db, "posts", postId));
+      alert("Gönderi silindi.");
+    } catch (e) {
+      alert("Gönderi silinirken hata oluştu: " + e.message);
+    }
+  };
+
+  // GÖNDERİ BİLDİR / RAPOR ET
+  window.reportPost = async function(postId) {
+    if (!window.fbUser) return;
+    try {
+      await addDoc(collection(db, "reports"), {
+        postId: postId,
+        reportedBy: window.fbUser.uid,
+        createdAt: serverTimestamp()
+      });
+      alert("Gönderi yöneticilere bildirildi. Teşekkürler!");
+    } catch (e) {
+      alert("Bildirim gönderilemedi.");
+    }
+  };
+
+  // GÖNDERİ BAĞLANTISINI PAYLAŞ / KOPYALA
+  window.sharePost = function(postId) {
+    const postUrl = window.location.origin + window.location.pathname + "#forum-view";
+    navigator.clipboard.writeText(postUrl);
+    alert("Forum bağlantısı panoya kopyalandı!");
+  };
+
   // CANLI FORUM DİNLEYİCİSİ
   let unsubscribePosts = null;
   window.listenForumPosts = function() {
@@ -149,24 +185,41 @@
 
     if (unsubscribePosts) unsubscribePosts();
 
-    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+    let postsRef = collection(db, "posts");
+    let q;
+
+    if (window.currentForumCategory !== 'all') {
+      q = query(postsRef, where("category", "==", window.currentForumCategory), orderBy(window.currentForumSort, "desc"));
+    } else {
+      q = query(postsRef, orderBy(window.currentForumSort, "desc"));
+    }
     
     unsubscribePosts = onSnapshot(q, (querySnapshot) => {
       if (querySnapshot.empty) {
-        feed.innerHTML = "<p style='text-align:center; opacity:0.7;'>Henüz hiç gönderi paylaşılmamış. İlk gönderiyi sen paylaş!</p>";
+        feed.innerHTML = "<p style='text-align:center; opacity:0.7;'>Bu kategoride henüz gönderi bulunmuyor.</p>";
         return;
       }
+
+      const searchQuery = (document.getElementById("forumSearchInput") ? document.getElementById("forumSearchInput").value : "").toLowerCase();
 
       feed.innerHTML = "";
       querySnapshot.forEach((docSnap) => {
         const post = docSnap.data();
         const postId = docSnap.id;
+
+        if (searchQuery) {
+          const matchTitle = (post.title || "").toLowerCase().includes(searchQuery);
+          const matchContent = (post.content || "").toLowerCase().includes(searchQuery);
+          if (!matchTitle && !matchContent) return;
+        }
+
         const postCard = document.createElement("div");
         postCard.className = "essay-card";
         postCard.style.marginBottom = "12px";
 
         const voteCount = post.votes || 0;
         const commentCount = post.commentCount || 0;
+        const isOwner = window.fbUser && (window.fbUser.uid === post.authorUid);
 
         postCard.innerHTML = `
           <div style="display:flex; gap:12px; align-items:flex-start;">
@@ -185,13 +238,18 @@
                     <span class="program-badge" style="margin-left:6px;">${post.category || 'Genel'}</span>
                   </div>
                 </div>
+                <div style="display:flex; gap:6px;">
+                  <button class="action-btn" style="padding:2px 6px; font-size:11px;" onclick="sharePost('${postId}')">🔗 Paylaş</button>
+                  <button class="action-btn" style="padding:2px 6px; font-size:11px; color:#eab308;" onclick="reportPost('${postId}')">🚨 Bildir</button>
+                  ${isOwner ? `<button class="action-btn" style="padding:2px 6px; font-size:11px; color:#ef4444;" onclick="deletePost('${postId}')">🗑️ Sil</button>` : ''}
+                </div>
               </div>
 
               <h3 style="margin:8px 0 4px 0; font-size:16px; color:var(--title-color);">${post.title}</h3>
               <p style="margin:0 0 10px 0; font-size:13px; line-height:1.5; opacity:0.9; white-space:pre-wrap;">${post.content}</p>
 
               <div style="display:flex; gap:10px; align-items:center;">
-                <button class="action-btn" style="font-size:11px;" onclick="toggleComments('${postId}')">💬 ${commentCount} Yorum</button>
+                <button class="action-btn" style="font-size:11px;" onclick="toggleComments('${postId}', '${post.authorUid}', '${post.bestCommentId || ''}')">💬 ${commentCount} Yorum</button>
               </div>
 
               <div id="comments-section-${postId}" style="display:none; margin-top:12px; border-top:1px solid var(--border); padding-top:10px;">
@@ -209,12 +267,27 @@
         `;
         feed.appendChild(postCard);
       });
+
+      if (feed.children.length === 0) {
+        feed.innerHTML = "<p style='text-align:center; opacity:0.7;'>Aranan kritere uygun gönderi bulunamadı.</p>";
+      }
     }, (e) => {
       feed.innerHTML = "<p style='text-align:center; color:#ef4444;'>Canlı bağlantı hatası oluştu.</p>";
     });
   };
 
-  // OY VERME (UPVOTE / DOWNVOTE)
+  window.filterForumCategory = function(cat, btn) {
+    window.currentForumCategory = cat;
+    document.querySelectorAll('#forumCategoryTabs .tab-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    window.listenForumPosts();
+  };
+
+  window.changeForumSort = function(sortType) {
+    window.currentForumSort = sortType;
+    window.listenForumPosts();
+  };
+
   window.votePost = async function(postId, delta) {
     if (!window.fbUser || window.fbUser.isAnonymous) {
       alert("Oy vermek için e-posta veya Google ile giriş yapmalısınız.");
@@ -251,20 +324,19 @@
     }
   };
 
-  // YORUM ALANINI AÇ/KAPAT
-  window.toggleComments = function(postId) {
+  window.toggleComments = function(postId, postAuthorUid, bestCommentId) {
     const sec = document.getElementById(`comments-section-${postId}`);
     if (sec.style.display === "none") {
       sec.style.display = "block";
-      listenComments(postId);
+      listenComments(postId, postAuthorUid, bestCommentId);
     } else {
       sec.style.display = "none";
     }
   };
 
-  // CANLI YORUM DİNLEYİCİSİ
+  // CANLI YORUM DİNLEYİCİSİ (EN İYİ CEVAP VE SİLME BUTONLU)
   const commentUnsubscribers = {};
-  window.listenComments = function(postId) {
+  window.listenComments = function(postId, postAuthorUid, bestCommentId) {
     const list = document.getElementById(`comments-list-${postId}`);
     if (commentUnsubscribers[postId]) commentUnsubscribers[postId]();
 
@@ -276,24 +348,59 @@
       }
 
       list.innerHTML = "";
+      const isPostOwner = window.fbUser && (window.fbUser.uid === postAuthorUid);
+
       snap.forEach(d => {
         const c = d.data();
+        const commentId = d.id;
+        const isCommentOwner = window.fbUser && (window.fbUser.uid === c.authorUid);
+        const isBest = (bestCommentId === commentId);
+
         const cBox = document.createElement("div");
-        cBox.style.background = "rgba(0,0,0,0.03)";
-        cBox.style.padding = "6px 10px";
+        cBox.style.background = isBest ? "rgba(22, 163, 74, 0.1)" : "rgba(0,0,0,0.03)";
+        cBox.style.border = isBest ? "1px solid #16a34a" : "none";
+        cBox.style.padding = "8px 10px";
         cBox.style.borderRadius = "6px";
         cBox.style.fontSize = "12px";
 
         cBox.innerHTML = `
-          <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
-            <img src="${c.authorAvatar || 'favicon.png'}" style="width:18px; height:18px; border-radius:50%; object-fit:cover;">
-            <strong style="font-size:11px;">${c.authorName || 'Kullanıcı'}</strong>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <img src="${c.authorAvatar || 'favicon.png'}" style="width:18px; height:18px; border-radius:50%; object-fit:cover;">
+              <strong style="font-size:11px;">${c.authorName || 'Kullanıcı'}</strong>
+              ${isBest ? `<span style="color:#16a34a; font-weight:bold; font-size:10px;">✅ EN İYİ CEVAP</span>` : ''}
+            </div>
+            <div style="display:flex; gap:4px;">
+              ${isPostOwner && !isBest ? `<button class="action-btn" style="padding:1px 4px; font-size:10px; color:#16a34a;" onclick="setBestComment('${postId}', '${commentId}')">✅ En İyi Seç</button>` : ''}
+              ${isCommentOwner ? `<button class="action-btn" style="padding:1px 4px; font-size:10px; color:#ef4444;" onclick="deleteComment('${postId}', '${commentId}')">🗑️</button>` : ''}
+            </div>
           </div>
           <p style="margin:0; opacity:0.9; line-height:1.3;">${c.text}</p>
         `;
         list.appendChild(cBox);
       });
     });
+  };
+
+  // EN İYİ CEVAP OLARAK İŞARETLEME
+  window.setBestComment = async function(postId, commentId) {
+    try {
+      await updateDoc(doc(db, "posts", postId), { bestCommentId: commentId });
+      alert("En iyi cevap seçildi!");
+    } catch (e) {
+      alert("İşlem başarısız.");
+    }
+  };
+
+  // YORUM SİLME
+  window.deleteComment = async function(postId, commentId) {
+    if (!confirm("Yorumunuzu silmek istediğinize emin misiniz?")) return;
+    try {
+      await deleteDoc(doc(db, "posts", postId, "comments", commentId));
+      await updateDoc(doc(db, "posts", postId), { commentCount: increment(-1) });
+    } catch (e) {
+      alert("Yorum silinemedi.");
+    }
   };
 
   // YORUM EKLEME
@@ -813,6 +920,25 @@
                 <h1>💬 Akademik Forum & Topluluk</h1>
                 <p class="subtitle">Diğer öğrencilerle takıldığın soruları paylaş, essay'lerini tartış, oy ver ve yorum yap.</p>
             </header>
+
+            <!-- KATEGORİ SEKMELERİ & ARAMA ÇUBUĞU -->
+            <div class="controls-grid" style="margin-bottom:12px;">
+                <div class="search-box">
+                    <input type="text" id="forumSearchInput" placeholder="Forumda konu veya içerik ara..." oninput="listenForumPosts()">
+                </div>
+                <select id="forumSortSelect" class="action-btn" onchange="changeForumSort(this.value)">
+                    <option value="createdAt">✨ En Yeni Gönderiler</option>
+                    <option value="votes">🔥 En Popüler (En Çok Oy)</option>
+                </select>
+            </div>
+
+            <div class="tabs-container" id="forumCategoryTabs">
+                <button class="tab-btn active" onclick="filterForumCategory('all', this)">Tümü</button>
+                <button class="tab-btn" onclick="filterForumCategory('✍️ Essay Feedback', this)">✍️ Essay Feedback</button>
+                <button class="tab-btn" onclick="filterForumCategory('❓ Gramer Sorusu', this)">❓ Gramer Sorusu</button>
+                <button class="tab-btn" onclick="filterForumCategory('💡 Sınav Taktikleri', this)">💡 Sınav Taktikleri</button>
+                <button class="tab-btn" onclick="filterForumCategory('💬 Genel Sohbet', this)">💬 Genel Sohbet</button>
+            </div>
 
             <!-- GÖNDERİ PAYLAŞMA KUTUSU -->
             <div class="essay-card" style="margin-bottom:20px;">
@@ -1550,7 +1676,6 @@ function toggleProgramTask(dayId, tIndex, isChecked) {
     renderProgram();
 }
 
-// SAYFA / SEKME DEĞİŞTİRME VE URL HASH GÜNCELLEME
 function switchView(viewId, element) {
     if (window.fbUser && window.fbUser.isAnonymous && (viewId === 'profile-view' || viewId === 'badges-view')) {
         alert("Bu bölüme erişmek için e-posta veya Google ile giriş yapmalısınız.");
@@ -1572,7 +1697,6 @@ function switchView(viewId, element) {
     
     closeMobileSidebarIfOpen();
 
-    // URL ÜZERİNDE SEKME İZİ BIRAKMA VE LOKALDE SAKLAMA
     window.location.hash = viewId;
     localStorage.setItem('last_active_view', viewId);
 
@@ -1584,7 +1708,6 @@ function switchView(viewId, element) {
     if (viewId === 'forum-view') window.listenForumPosts();
 }
 
-// TARAYICI GERİ / İLERİ BUTONLARINA BASILDIĞINDA SEKME YÖNETİMİ
 window.addEventListener('hashchange', () => {
     const activeHash = window.location.hash.replace('#', '');
     if (activeHash) {
@@ -1853,7 +1976,6 @@ function showRandomWord() {
     filterWords();
 }
 
-// TEK VE MERKEZİ TEMA DEĞİŞTİRME FONKSİYONU
 function changeTheme(themeName) {
     document.body.classList.remove("dark-mode", "cyber-mode", "sepia-mode");
     
