@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>AWL Pro Study & Writing Station</title>
 
+<!-- Favicon (Sekme İkonu) -->
+<link rel="icon" type="image/png" href="favicon.png">
+
 <!-- Firebase SDK Modülleri -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -232,7 +235,6 @@
     .logo-title { font-size: 16px; font-weight: bold; color: #ffffff; letter-spacing: 0.5px; }
     .logo-badge { font-size: 10px; color: #60a5fa; text-transform: uppercase; font-weight: 600; }
 
-    /* PROFİL BAR & DROPDOWN */
     .user-profile-bar {
         position: relative;
         padding: 12px 20px;
@@ -324,7 +326,6 @@
     .pick-word-btn { background: var(--input-bg); border: 1px solid var(--border); color: var(--text); padding: 4px 6px; border-radius: 4px; font-size: 11px; cursor: pointer; }
     .pick-word-btn.selected { background: #2563eb; color: white; border-color: #2563eb; }
 
-    /* BAŞARIM VE ROZET STİLLERİ */
     .badge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 15px; }
     .badge-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 15px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; transition: transform 0.2s, box-shadow 0.2s; }
     .badge-card.unlocked { border-color: #3b82f6; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15); }
@@ -448,7 +449,7 @@
 
             <!-- DROPDOWN MENU -->
             <div class="profile-dropdown-menu">
-                <div class="dropdown-item" onclick="switchView('badges-view', this)">🏆 Başarımlar & Rozetler</div>
+                <div class="dropdown-item" onclick="switchView('badges-view', null)">🏆 Başarımlar & Rozetler</div>
                 <div class="dropdown-item" style="color:#ef4444;" onclick="handleLogout()">🚪 Çıkış Yap</div>
             </div>
         </div>
