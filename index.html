@@ -45,18 +45,17 @@
   onAuthStateChanged(auth, async (user) => {
     const authModal = document.getElementById("authModal");
     const userProfileBar = document.getElementById("userProfileBar");
-    const userEmailDisplay = document.getElementById("userEmailDisplay");
 
     if (user) {
       window.fbUser = user;
       authModal.style.display = "none";
       userProfileBar.style.display = "flex";
-      userEmailDisplay.innerText = user.isAnonymous ? "Misafir Kullanıcı 👤" : (user.displayName || user.email);
       await loadUserDataFromCloud();
       renderApp();
       renderWordPicker();
       renderProgram();
       calculateBadgesAndXP();
+      updateProfileUI();
     } else {
       window.fbUser = null;
       authModal.style.display = "flex";
@@ -435,6 +434,10 @@
     .forgot-pass-link { display: block; font-size: 11px; color: #3b82f6; text-decoration: none; margin-top: 10px; cursor: pointer; }
     .auth-error { color: #ef4444; font-size: 11px; margin-top: 8px; min-height: 15px; }
 
+    /* PROFİL DÜZENLEME MODÜLÜ CSS */
+    .profile-avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); }
+    .profile-avatar-preview { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #2563eb; display: block; margin: 10px 0; }
+
     @media (max-width: 768px) {
         .mobile-header { display: flex; }
         .app-container { height: calc(100vh - 48px); }
@@ -453,8 +456,8 @@
 
 <div class="mobile-header">
     <span class="mobile-header-title" style="display: flex; align-items: center; gap: 6px;">
-    <img src="logo.gif" alt="Logo" style="width: 24px; height: 24px; object-fit: contain;"> AWL
-</span>
+        <img src="logo.gif" alt="Logo" style="width: 24px; height: 24px; object-fit: contain;"> AWL
+    </span>
     <button class="menu-toggle-btn" onclick="toggleMobileSidebar()">☰ Menü</button>
 </div>
 
@@ -503,8 +506,8 @@
     <div class="sidebar" id="sidebar">
         <div class="sidebar-logo-container">
             <div class="sidebar-logo-icon">
-    <img src="logo.gif" alt="Logo" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;">
-</div>
+                <img src="logo.gif" alt="Logo" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;">
+            </div>
             <div class="logo-text-group">
                 <span class="logo-title">AWL</span>
                 <span class="logo-badge">Cloud Pro Station</span>
@@ -513,15 +516,19 @@
 
         <!-- PROFİL VE AÇILIR MENÜ -->
         <div class="user-profile-bar" id="userProfileBar" style="display:none;">
-            <div class="profile-info-group">
-                <span id="userEmailDisplay" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px; font-weight:bold; color:#f8fafc;"></span>
-                <span class="user-level-tag" id="userLevelDisplay">Lvl 1 • 0 XP</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <img id="userAvatarDisplay" class="profile-avatar-img" src="favicon.png" alt="Avatar">
+                <div class="profile-info-group">
+                    <span id="userEmailDisplay" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:120px; font-weight:bold; color:#f8fafc;">Öğrenci</span>
+                    <span class="user-level-tag" id="userLevelDisplay">Lvl 1 • 0 XP</span>
+                </div>
             </div>
             <span style="font-size:10px;">▼</span>
 
             <!-- DROPDOWN MENU -->
             <div class="profile-dropdown-menu">
-                <div class="dropdown-item" onclick="switchView('badges-view', null)">🏆 Başarımlar & Rozetler</div>
+                <div class="dropdown-item non-guest-only" onclick="switchView('profile-view', null)">👤 Profilimi Düzenle</div>
+                <div class="dropdown-item non-guest-only" onclick="switchView('badges-view', null)">🏆 Başarımlar & Rozetler</div>
                 <div class="dropdown-item" style="color:#ef4444;" onclick="handleLogout()">🚪 Çıkış Yap</div>
             </div>
         </div>
@@ -565,7 +572,47 @@
             <div id="program-container"></div>
         </div>
 
-        <!-- BAŞARIMLAR VE ROZETLER SEKMESİ (SADECE PROFİL DROPDOWN ÜZERİNDEN AÇILIR) -->
+        <!-- PROFİLİM VE ÖZELLEŞTİRME SEKMESİ (SADECE AÇILIR MENÜDEN AÇILIR) -->
+        <div id="profile-view" class="view-section">
+            <header>
+                <h1>👤 Profilim & Kişiselleştirme</h1>
+                <p class="subtitle">Kendi profil fotoğrafını yükle, görünür adını ve akademik hedeflerini güncelle.</p>
+            </header>
+
+            <div class="essay-card">
+                <h3>1. Profil Fotoğrafı Yükle</h3>
+                <img id="profileAvatarPreview" class="profile-avatar-preview" src="favicon.png" alt="Önizleme">
+                <input type="file" id="avatarFileInput" accept="image/*" class="auth-input" onchange="handleCustomAvatarUpload(event)">
+
+                <hr style="border:0; border-top:1px solid var(--border); margin:15px 0;">
+
+                <h3>2. Kişisel Bilgiler & Unvan</h3>
+                <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:4px;">Görünür Kullanıcı Adınız:</label>
+                <input type="text" id="profileNameInput" class="auth-input" placeholder="Örn: Ahmet Y.">
+
+                <label style="font-size:12px; font-weight:bold; display:block; margin-top:10px; margin-bottom:4px;">Akademik Biyo / Hedefiniz:</label>
+                <input type="text" id="profileBioInput" class="auth-input" placeholder="Örn: Medipol Law Candidate ⚖️">
+
+                <hr style="border:0; border-top:1px solid var(--border); margin:15px 0;">
+
+                <h3>3. Günlük Çalışma Hedefleri</h3>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <div style="flex:1;">
+                        <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:4px;">Günlük Hedef Kelime:</label>
+                        <input type="number" id="goalWordInput" class="auth-input" value="10" min="1" max="150">
+                    </div>
+                    <div style="flex:1;">
+                        <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:4px;">Günlük Hedef Essay/Paragraf:</label>
+                        <input type="number" id="goalEssayInput" class="auth-input" value="1" min="1" max="10">
+                    </div>
+                </div>
+
+                <button class="action-btn" style="background:#2563eb; color:white; border:none; padding:12px; width:100%; font-size:14px; margin-top:15px;" onclick="saveUserProfile()">💾 Profil Değişikliklerini Kaydet</button>
+                <div id="profileSaveStatus" style="font-size:12px; color:#10b981; text-align:center; margin-top:8px; display:none;">✓ Profil Başarıyla Güncellendi!</div>
+            </div>
+        </div>
+
+        <!-- BAŞARIMLAR VE ROZETLER SEKMESİ -->
         <div id="badges-view" class="view-section">
             <header>
                 <h1>🏆 Başarımlar & Rozetler</h1>
@@ -723,6 +770,8 @@
 </div>
 
 <script>
+let customAvatarBase64 = '';
+
 const badgeDefinitions = [
     { id: "b_first_day", title: "İlk Adım", icon: "🚀", desc: "Çalışma programındaki ilk gününü tamamla." },
     { id: "b_week_streak", title: "Kararlı Öğrenci", icon: "🔥", desc: "Programda 7 günü başarıyla tamamla." },
@@ -731,6 +780,74 @@ const badgeDefinitions = [
     { id: "b_vocab_star", title: "Favori Avcısı", icon: "⭐", desc: "En az 5 kelimeyi favorilerine ekle." },
     { id: "b_note_taker", title: "Not Tutucu", icon: "🎧", desc: "Listening bölümünde ilk dinleme notunu kaydet." }
 ];
+
+function handleCustomAvatarUpload(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            customAvatarBase64 = e.target.result;
+            document.getElementById("profileAvatarPreview").src = customAvatarBase64;
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function updateProfileUI() {
+    const isAnon = window.fbUser && window.fbUser.isAnonymous;
+    
+    // MİSAFİR KULLANICI KISITLAMALARI
+    document.querySelectorAll('.non-guest-only').forEach(el => {
+        el.style.display = isAnon ? "none" : "flex";
+    });
+
+    const avatar = getUserVal('profile_avatar') || 'favicon.png';
+    const name = getUserVal('profile_name') || (window.fbUser ? (isAnon ? "Misafir Kullanıcı 👤" : (window.fbUser.displayName || window.fbUser.email)) : "Öğrenci");
+    const bio = getUserVal('profile_bio') || "";
+    const goalWord = getUserVal('profile_goal_word') || "10";
+    const goalEssay = getUserVal('profile_goal_essay') || "1";
+
+    customAvatarBase64 = avatar;
+    document.getElementById("userAvatarDisplay").src = avatar;
+    document.getElementById("profileAvatarPreview").src = avatar;
+    document.getElementById("userEmailDisplay").innerText = name;
+
+    const nameInput = document.getElementById("profileNameInput");
+    const bioInput = document.getElementById("profileBioInput");
+    const wordInput = document.getElementById("goalWordInput");
+    const essayInput = document.getElementById("goalEssayInput");
+
+    if (nameInput) nameInput.value = name;
+    if (bioInput) bioInput.value = bio;
+    if (wordInput) wordInput.value = goalWord;
+    if (essayInput) essayInput.value = goalEssay;
+}
+
+function saveUserProfile() {
+    if (window.fbUser && window.fbUser.isAnonymous) {
+        alert("Misafir kullanıcılar profil düzenleyemez.");
+        return;
+    }
+
+    const name = document.getElementById("profileNameInput").value.trim();
+    const bio = document.getElementById("profileBioInput").value.trim();
+    const goalWord = document.getElementById("goalWordInput").value;
+    const goalEssay = document.getElementById("goalEssayInput").value;
+
+    if (window.saveToCloud) {
+        if (customAvatarBase64) window.saveToCloud('profile_avatar', customAvatarBase64);
+        window.saveToCloud('profile_name', name);
+        window.saveToCloud('profile_bio', bio);
+        window.saveToCloud('profile_goal_word', goalWord);
+        window.saveToCloud('profile_goal_essay', goalEssay);
+    }
+
+    updateProfileUI();
+
+    const status = document.getElementById("profileSaveStatus");
+    status.style.display = "block";
+    setTimeout(() => { status.style.display = "none"; }, 1500);
+}
 
 function calculateBadgesAndXP() {
     let totalXP = 0;
@@ -1136,6 +1253,11 @@ function toggleProgramTask(dayId, tIndex, isChecked) {
 }
 
 function switchView(viewId, element) {
+    if (window.fbUser && window.fbUser.isAnonymous && (viewId === 'profile-view' || viewId === 'badges-view')) {
+        alert("Bu bölüme erişmek için e-posta veya Google ile giriş yapmalısınız.");
+        return;
+    }
+
     document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.sidebar-menu li').forEach(el => el.classList.remove('active'));
     document.getElementById(viewId).classList.add('active');
@@ -1150,6 +1272,7 @@ function switchView(viewId, element) {
     if (viewId === 'spaced-view') renderDueWords();
     if (viewId === 'tureng-view') renderTurengQuickLinks();
     if (viewId === 'badges-view') calculateBadgesAndXP();
+    if (viewId === 'profile-view') updateProfileUI();
 }
 
 function openTureng(word) {
