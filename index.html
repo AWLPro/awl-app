@@ -12,7 +12,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, getDocs, query, orderBy, serverTimestamp, increment, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, getDocs, query, orderBy, serverTimestamp, increment, runTransaction, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
   import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
   const firebaseConfig = {
@@ -56,7 +56,13 @@
       renderProgram();
       calculateBadgesAndXP();
       updateProfileUI();
-      loadForumPosts();
+      
+      // SAYFA YENİLENDİĞİNDE KALINAN SEKMEYİ AÇMA HAFİZASI
+      const currentHash = window.location.hash.replace('#', '');
+      const savedView = currentHash || localStorage.getItem('last_active_view') || 'program-view';
+      const targetMenuItem = document.querySelector(`.sidebar-menu li[onclick*="'${savedView}'"]`);
+      switchView(savedView, targetMenuItem);
+
     } else {
       window.fbUser = null;
       authModal.style.display = "flex";
@@ -130,23 +136,22 @@
 
       document.getElementById("forumPostTitle").value = "";
       document.getElementById("forumPostContent").value = "";
-      alert("Gönderiniz başarıyla paylaşıldı!");
-      loadForumPosts();
     } catch (e) {
       alert("Gönderi paylaşılırken hata oluştu: " + e.message);
     }
   };
 
-  // FORUM GÖNDERİLERİNİ YÜKLEME (FAZ 2: UPVOTE/DOWNVOTE VE YORUM DESTEKLİ)
-  window.loadForumPosts = async function() {
+  // CANLI FORUM DİNLEYİCİSİ
+  let unsubscribePosts = null;
+  window.listenForumPosts = function() {
     const feed = document.getElementById("forumFeed");
     if (!feed) return;
-    feed.innerHTML = "<p style='text-align:center; opacity:0.7;'>Gönderiler yükleniyor...</p>";
 
-    try {
-      const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
-      const querySnapshot = await getDocs(q);
-      
+    if (unsubscribePosts) unsubscribePosts();
+
+    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+    
+    unsubscribePosts = onSnapshot(q, (querySnapshot) => {
       if (querySnapshot.empty) {
         feed.innerHTML = "<p style='text-align:center; opacity:0.7;'>Henüz hiç gönderi paylaşılmamış. İlk gönderiyi sen paylaş!</p>";
         return;
@@ -165,14 +170,12 @@
 
         postCard.innerHTML = `
           <div style="display:flex; gap:12px; align-items:flex-start;">
-            <!-- UPVOTE/DOWNVOTE SOL KOLON -->
             <div style="display:flex; flex-direction:column; align-items:center; background:rgba(0,0,0,0.05); padding:6px 8px; border-radius:8px;">
               <button class="action-btn" style="padding:2px 8px; font-size:14px;" onclick="votePost('${postId}', 1)">▲</button>
               <span style="font-size:12px; font-weight:bold; margin:4px 0;" id="vote-score-${postId}">${voteCount}</span>
               <button class="action-btn" style="padding:2px 8px; font-size:14px;" onclick="votePost('${postId}', -1)">▼</button>
             </div>
 
-            <!-- İÇERİK BÖLÜMÜ -->
             <div style="flex:1;">
               <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
                 <div style="display:flex; align-items:center; gap:8px;">
@@ -187,12 +190,10 @@
               <h3 style="margin:8px 0 4px 0; font-size:16px; color:var(--title-color);">${post.title}</h3>
               <p style="margin:0 0 10px 0; font-size:13px; line-height:1.5; opacity:0.9; white-space:pre-wrap;">${post.content}</p>
 
-              <!-- YORUM BUTONU -->
               <div style="display:flex; gap:10px; align-items:center;">
                 <button class="action-btn" style="font-size:11px;" onclick="toggleComments('${postId}')">💬 ${commentCount} Yorum</button>
               </div>
 
-              <!-- YORUM ALANI (GİZLİ BAŞLAR) -->
               <div id="comments-section-${postId}" style="display:none; margin-top:12px; border-top:1px solid var(--border); padding-top:10px;">
                 <div id="comments-list-${postId}" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
                   <p style="font-size:11px; opacity:0.7;">Yorumlar yükleniyor...</p>
@@ -208,9 +209,9 @@
         `;
         feed.appendChild(postCard);
       });
-    } catch (e) {
-      feed.innerHTML = "<p style='text-align:center; color:#ef4444;'>Gönderiler yüklenirken hata oluştu.</p>";
-    }
+    }, (e) => {
+      feed.innerHTML = "<p style='text-align:center; color:#ef4444;'>Canlı bağlantı hatası oluştu.</p>";
+    });
   };
 
   // OY VERME (UPVOTE / DOWNVOTE)
@@ -236,41 +237,39 @@
         let newScore = currentScore;
 
         if (previousVote === delta) {
-          // Oyu geri al
           newScore -= delta;
           transaction.delete(userVoteRef);
         } else {
-          // Oyu güncelle veya yeni oy ver
           newScore = currentScore - previousVote + delta;
           transaction.set(userVoteRef, { value: delta });
         }
 
         transaction.update(postRef, { votes: newScore });
-        document.getElementById(`vote-score-${postId}`).innerText = newScore;
       });
     } catch (e) {
       console.error("Oy kullanılamadı:", e);
     }
   };
 
-  // YORUM ALANINI AÇ/KAPAT VE YORUMLARI YÜKLE
-  window.toggleComments = async function(postId) {
+  // YORUM ALANINI AÇ/KAPAT
+  window.toggleComments = function(postId) {
     const sec = document.getElementById(`comments-section-${postId}`);
     if (sec.style.display === "none") {
       sec.style.display = "block";
-      loadComments(postId);
+      listenComments(postId);
     } else {
       sec.style.display = "none";
     }
   };
 
-  // YORUMLARI YÜKLEME
-  window.loadComments = async function(postId) {
+  // CANLI YORUM DİNLEYİCİSİ
+  const commentUnsubscribers = {};
+  window.listenComments = function(postId) {
     const list = document.getElementById(`comments-list-${postId}`);
-    try {
-      const q = query(collection(db, "posts", postId, "comments"), orderBy("createdAt", "asc"));
-      const snap = await getDocs(q);
+    if (commentUnsubscribers[postId]) commentUnsubscribers[postId]();
 
+    const q = query(collection(db, "posts", postId, "comments"), orderBy("createdAt", "asc"));
+    commentUnsubscribers[postId] = onSnapshot(q, (snap) => {
       if (snap.empty) {
         list.innerHTML = "<p style='font-size:11px; opacity:0.7;'>Henüz yorum yapılmamış. İlk yorumu sen yap!</p>";
         return;
@@ -294,9 +293,7 @@
         `;
         list.appendChild(cBox);
       });
-    } catch (e) {
-      list.innerHTML = "<p style='font-size:11px; color:#ef4444;'>Yorumlar alınamadı.</p>";
-    }
+    });
   };
 
   // YORUM EKLEME
@@ -327,7 +324,6 @@
       await updateDoc(postRef, { commentCount: increment(1) });
 
       input.value = "";
-      loadComments(postId);
     } catch (e) {
       alert("Yorum eklenirken hata oluştu: " + e.message);
     }
@@ -811,7 +807,7 @@
             <div id="program-container"></div>
         </div>
 
-        <!-- AKADEMİK FORUM SEKMESİ (FAZ 2: UPVOTE/DOWNVOTE + YORUM SİSTEMİ) -->
+        <!-- AKADEMİK FORUM SEKMESİ -->
         <div id="forum-view" class="view-section">
             <header>
                 <h1>💬 Akademik Forum & Topluluk</h1>
@@ -841,7 +837,7 @@
             <div id="forumFeed"></div>
         </div>
 
-        <!-- PROFİLİM VE ÖZELLEŞTİRME SEKMESİ (SADECE AÇILIR MENÜDEN AÇILIR) -->
+        <!-- PROFİLİM VE ÖZELLEŞTİRME SEKMESİ -->
         <div id="profile-view" class="view-section">
             <header>
                 <h1>👤 Profilim & Kişiselleştirme</h1>
@@ -1058,11 +1054,10 @@ const badgeDefinitions = [
     { id: "b_note_taker", title: "Not Tutucu", icon: "🎧", desc: "Listening bölümünde ilk dinleme notunu kaydet." }
 ];
 
-// GIF VEYA GÖRSEL YÜKLEME (ANIMASYON SIKIŞTIRILMADAN DOĞRUDAN HAM VERİ ALINIR)
 function handleCustomAvatarUpload(event) {
     const file = event.target.files[0];
     if (file) {
-        if (file.size > 1024 * 1024) { // 1MB Sınırı
+        if (file.size > 1024 * 1024) {
             alert("Lütfen 1MB'tan küçük bir resim veya GIF seçin.");
             return;
         }
@@ -1091,7 +1086,6 @@ function setAvatarSrc(src) {
     if (previewImg) { previewImg.src = src; }
 }
 
-// PROFİL FOTOĞRAFINI KALDIRMA / VARSAYILANA DÖNDÜRME
 function removeCustomAvatar() {
     customAvatarBase64 = 'favicon.png';
     setAvatarSrc('favicon.png');
@@ -1102,7 +1096,6 @@ function removeCustomAvatar() {
 function updateProfileUI() {
     const isAnon = window.fbUser && window.fbUser.isAnonymous;
     
-    // MİSAFİR KULLANICI KISITLAMALARI
     document.querySelectorAll('.non-guest-only').forEach(el => {
         el.style.display = isAnon ? "none" : "flex";
     });
@@ -1557,6 +1550,7 @@ function toggleProgramTask(dayId, tIndex, isChecked) {
     renderProgram();
 }
 
+// SAYFA / SEKME DEĞİŞTİRME VE URL HASH GÜNCELLEME
 function switchView(viewId, element) {
     if (window.fbUser && window.fbUser.isAnonymous && (viewId === 'profile-view' || viewId === 'badges-view')) {
         alert("Bu bölüme erişmek için e-posta veya Google ile giriş yapmalısınız.");
@@ -1565,21 +1559,38 @@ function switchView(viewId, element) {
 
     document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.sidebar-menu li').forEach(el => el.classList.remove('active'));
-    document.getElementById(viewId).classList.add('active');
+    
+    const targetView = document.getElementById(viewId);
+    if (targetView) targetView.classList.add('active');
     
     if (element && element.classList) {
         element.classList.add('active');
+    } else {
+        const menuItem = document.querySelector(`.sidebar-menu li[onclick*="'${viewId}'"]`);
+        if (menuItem) menuItem.classList.add('active');
     }
     
     closeMobileSidebarIfOpen();
+
+    // URL ÜZERİNDE SEKME İZİ BIRAKMA VE LOKALDE SAKLAMA
+    window.location.hash = viewId;
+    localStorage.setItem('last_active_view', viewId);
 
     if (viewId === 'program-view') renderProgram();
     if (viewId === 'spaced-view') renderDueWords();
     if (viewId === 'tureng-view') renderTurengQuickLinks();
     if (viewId === 'badges-view') calculateBadgesAndXP();
     if (viewId === 'profile-view') updateProfileUI();
-    if (viewId === 'forum-view') window.loadForumPosts();
+    if (viewId === 'forum-view') window.listenForumPosts();
 }
+
+// TARAYICI GERİ / İLERİ BUTONLARINA BASILDIĞINDA SEKME YÖNETİMİ
+window.addEventListener('hashchange', () => {
+    const activeHash = window.location.hash.replace('#', '');
+    if (activeHash) {
+        switchView(activeHash, null);
+    }
+});
 
 function openTureng(word) {
     const cleanWord = word.split(' ')[0].toLowerCase().replace(/[^a-z]/g, '');
