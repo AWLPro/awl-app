@@ -65,7 +65,7 @@
       renderGrammarLab();
       listenNotifications();
       listenVoiceLounge();
-      checkRolesAndPanels();
+      await checkRolesAndPanels();
       
       const currentHash = window.location.hash.replace('#', '');
       const savedView = currentHash || localStorage.getItem('last_active_view') || 'dashboard-view';
@@ -111,21 +111,24 @@
     } catch (e) { console.error(e); }
   };
 
-  // ROLLERİ VE PANELLERİ DENETLEME (AGAH ÖZEL SÜPER ADMİN)
+  // KESİN VE HASSAS YETKİ KONTROLÜ (SADECE KULLANICI ADI "agah" OLAN SÜPER ADMİNDİR)
   window.isSuperAdminAgah = false;
   window.checkRolesAndPanels = async function() {
     if (!window.fbUser) return;
-    const name = (getUserVal('profile_name') || window.fbUser.displayName || "").toLowerCase();
-    const email = (window.fbUser.email || "").toLowerCase();
+    const exactUsername = (getUserVal('profile_name') || "").trim().toLowerCase();
     
-    window.isSuperAdminAgah = name === "agah" || email.includes("agah");
+    // Sadece tam kullanıcı adı "agah" olan kişi Süper Admin olabilir
+    window.isSuperAdminAgah = (exactUsername === "agah");
 
     let isStandardAdmin = window.isSuperAdminAgah;
     if (!isStandardAdmin) {
       try {
         const aSnap = await getDoc(doc(db, "admins", window.fbUser.uid));
-        if (aSnap.exists() && aSnap.data().isAdmin) isStandardAdmin = true;
-      } catch (e) { console.error(e); }
+        isStandardAdmin = aSnap.exists() && aSnap.data().isAdmin === true;
+      } catch (e) { 
+        console.error(e);
+        isStandardAdmin = false;
+      }
     }
 
     const adminMenu = document.getElementById("adminMenuTab");
@@ -163,7 +166,7 @@
         const uQuery = query(collection(db, "users"), where("profile_name", "==", username));
         const uSnap = await getDocs(uQuery);
         if (!uSnap.empty) {
-          errorBox.innerText = `"${username}" kullanıcı adı zaten alınmış! Lütfen başka bir kullanıcı adı seçin.`;
+          errorBox.innerText = `"${username}" kullanıcı adı zaten kullanımda! Lütfen başka bir kullanıcı adı seçin.`;
           return;
         }
       } catch (err) {
@@ -1468,7 +1471,6 @@
             <li onclick="switchView('settings-view', this)">⚙️ Ayarlar & Araçlar</li>
         </ul>
         
-        <!-- TEK TEMA SEÇİCİ DROPDOWN -->
         <div class="sidebar-footer">
             <select id="themeSelect" class="theme-select-dropdown" onchange="changeTheme(this.value)">
                 <option value="light">☀️ Aydınlık Tema</option>
@@ -1917,123 +1919,6 @@ const badgeDefinitions = [
     { id: "b_note_taker", title: "Not Tutucu", icon: "🎧", desc: "Listening bölümünde ilk dinleme notunu kaydet." }
 ];
 
-// GELİŞTİRİLMİŞ ZENGİN GRAMMAR LAB VERİ HAVUZU
-const grammarData = {
-    tenses: {
-        title: "Zamanlar (Tenses & Aspects)",
-        learn: `
-          <b>1. Present Simple vs. Present Perfect:</b><br>
-          • <i>Present Simple:</i> Genel gerçekler, teoriler ve tanımlar (örn: "Water boils at 100°C", "The theory states that...").<br>
-          • <i>Present Perfect:</i> Geçmişte yapılmış ama etkisi ve geçerliliği bugüne uzanan akademik araştırmalar (örn: "Recent studies <b>have shown</b> that...").<br><br>
-          <b>2. Past Simple:</b> Belirli bir tarihte tamamlanmış tarihsel veya deneysel süreçler (örn: "In 1995, Smith <b>conducted</b> an experiment.").<br><br>
-          ⚠️ <b>Common Pitfall (Sık Yapılan Hata):</b> "Since 2010, the population <s>decreased</s>" ➔ <b>has decreased</b> olmalıdır!
-        `,
-        practice: [
-            { q: "Over the last decade, technology _______ the educational landscape dramatically.", options: ["altered", "has altered", "is altering"], a: 1, exp: "Zaman zarfı 'over the last decade' olduğu için Present Perfect kullanılır." },
-            { q: "In their 2018 paper, the authors _______ that the hypothesis was valid.", options: ["concluded", "have concluded", "conclude"], a: 0, exp: "2018 gibi net bir geçmiş tarih verildiği için Past Simple kullanılır." }
-        ],
-        review: "📌 <b>Özet Formül:</b> Güncel Araştırmalar = Have/Has + V3 | Tarihli Olaylar = V2 | Genel Tanımlar = V1/Vs."
-    },
-    conditionals: {
-        title: "Conditionals & Mixed Conditionals",
-        learn: `
-          <b>1. Type 2 (Gerçek Dışı Hipotezler):</b> If + Past Simple, would/could + V1.<br>
-          • Örn: "If the government <b>funded</b> research more heavily, breakthroughs <b>would occur</b> faster."<br><br>
-          <b>2. Type 3 (Geçmiş Varsayım & Pişmanlık):</b> If + Past Perfect (had V3), would have + V3.<br>
-          • Örn: "If the sample <b>had been preserved</b>, the data <b>would have provided</b> clearer insights."<br><br>
-          <b>3. Inversion (Devrik Şart):</b> "If you should need..." ➔ <b>"Should you need..."</b> | "If they had known..." ➔ <b>"Had they known..."</b>.
-        `,
-        practice: [
-            { q: "Had the researchers calibrated the device correctly, the errors _______ avoided.", options: ["would be", "would have been", "will be"], a: 1, exp: "'Had + V3' devrik Type 3 yapısıdır, devamı 'would have been' olmalıdır." },
-            { q: "If the variable _______ controlled, the test would yield different results.", options: ["were", "is", "had been"], a: 0, exp: "Type 2 yapısında resmi/akademik dilde 'were' tercih edilir." }
-        ],
-        review: "📌 <b>Özet Formül:</b> Devrik Tip 3: <b>Had + Özne + V3, would have V3</b>."
-    },
-    passive: {
-        title: "Passive Voice & Agentless Passives",
-        learn: `
-          Akademik yazımda nesnellik esastır. Bu yüzden araştırmacıyı ("we/I") öne çıkarmak yerine edilgen çatı kullanılır.<br><br>
-          • <b>Kullanım:</b> "The experiment <b>was conducted</b> under strict conditions." (by researchers demeye gerek yoktur).<br>
-          • <b>Raporlama Edilgenleri:</b> "It is widely believed that...", "The findings are expected to..."
-        `,
-        practice: [
-            { q: "All participants _______ to sign a consent form prior to the interview.", options: ["were asked", "asked", "have asking"], a: 0, exp: "Katılımcılar başkası tarafından istendiği için Pasif (were asked) gereklidir." }
-        ],
-        review: "📌 <b>Özet Formül:</b> <b>Be + V3</b> (am/is/are/was/were/been + Past Participle)."
-    },
-    relative: {
-        title: "Relative Clauses & Participle Reductions",
-        learn: `
-          Akademik dilde cümleleri kısaltmak (Reduction) C1 seviyesinin göstergesidir.<br><br>
-          • <b>Aktif Kısaltma (Ving):</b> "Students <i>who study</i> hard..." ➔ "Students <b>studying</b> hard..."<br>
-          • <b>Pasif Kısaltma (V3):</b> "The methodology <i>which was used</i> in the paper..." ➔ "The methodology <b>used</b> in the paper..."
-        `,
-        practice: [
-            { q: "The report _______ by the committee will be published tomorrow.", options: ["submitted", "submitting", "which submit"], a: 0, exp: "Komite tarafından sunulan rapor edilgen olduğu için V3 ile kısaltılır (submitted)." }
-        ],
-        review: "📌 <b>Özet Formül:</b> Aktif kısaltma = <b>Ving</b> | Pasif kısaltma = <b>V3</b>."
-    },
-    modals: {
-        title: "Modals of Deduction & Academic Hedging",
-        learn: `
-          <b>Hedging (İddiayı Yumuşatma):</b> Akademik yazılarda kesin konuşmak yerine ihtimaller kullanılır.<br>
-          • %100 Kesin: "This proves that..." yerine ➔ "This <b>may/might suggest</b> that..."<br>
-          • Geçmiş Çıkarım: <b>Must have V3</b> (kesin olmuş olmalı), <b>Cannot have V3</b> (olmuş olamaz).
-        `,
-        practice: [
-            { q: "The sudden drop in pressure _______ caused the chemical explosion.", options: ["must have", "should to", "could to"], a: 0, exp: "Geçmişe yönelik güçlü çıkarımlarda 'must have + V3' kullanılır." }
-        ],
-        review: "📌 <b>Özet:</b> Akademik dilde 'may / might / could' ile iddialarınızı yumuşatın."
-    },
-    articles: {
-        title: "Articles & Determiners in Academic English",
-        learn: `
-          • <b>Genel/Sayılmayan İsimler (No Article):</b> "<s>The</s> Education is crucial." ➔ "<b>Education</b> is crucial."<br>
-          • <b>Belirli/Tanımlı İsimler (The):</b> "<b>The</b> education system of Finland is progressive."
-        `,
-        practice: [
-            { q: "___ evidence presented in the trial was deemed inconclusive.", options: ["The", "A", "—"], a: 0, exp: "Davadaki sunulan kanıt belirli ve tanımlı olduğu için 'The' alır." }
-        ],
-        review: "📌 <b>Özet:</b> Soyut ve genel kavramlar yalın kullanılır, spesifik tamlamalar 'The' alır."
-    },
-    prepositions: {
-        title: "Prepositions & Academic Collocations",
-        learn: `
-          Akademik dilde prepositions kelimelerle kalıp olarak gelir:<br>
-          • <b>Contribute to</b> | <b>Focus on</b> | <b>Consist of</b> | <b>Attribute to</b> | <b>Compensate for</b>
-        `,
-        practice: [
-            { q: "Lack of sleep can severely contribute _______ memory deterioration.", options: ["to", "for", "with"], a: 0, exp: "'Contribute' fiili daima 'to' edatıyla kullanılır." }
-        ],
-        review: "📌 <b>Özet:</b> Preposition kuralla değil, kalıp kelimelerle birlikte ezberlenmelidir."
-    },
-    conjunctions: {
-        title: "Transitions & Discourse Markers",
-        learn: `
-          <b>1. Zıtlık (Contrast):</b> However (Ancak), Although + Cümle (Rağmen), Despite + İsim/Ving (e Rağmen).<br>
-          <b>2. Sebep-Sonuç (Cause-Effect):</b> Therefore, Consequently, Thus (Bu yüzden).<br>
-          <b>3. Ekleme (Addition):</b> Furthermore, In addition, Moreover (Dahası).
-        `,
-        practice: [
-            { q: "_______ having sufficient funds, the project was cancelled due to regulatory issues.", options: ["Despite", "Although", "Whereas"], a: 0, exp: "'Having sufficient funds' bir gerund (Ving) yapısı olduğu için 'Despite' gelir." }
-        ],
-        review: "📌 <b>Özet:</b> Although + Tam Cümle | Despite / In spite of + İsim veya Ving."
-    },
-    academic: {
-        title: "Academic Inversion (Devrik Cümle Kalıpları)",
-        learn: `
-          Cümle başına olumsuz/kısıtlayıcı zarflar geldiğinde cümle soru formatında devrilir:<br>
-          • <b>Hardly / Scarcely ... when:</b> "Hardly <b>had we started</b> when it rained."<br>
-          • <b>Not only ... but also:</b> "Not only <b>did they analyze</b> the data, but they also..."<br>
-          • <b>Under no circumstances:</b> "Under no circumstances <b>should the rules be broken</b>."
-        `,
-        practice: [
-            { q: "Under no circumstances _______ the confidential files without permission.", options: ["you should access", "should you access", "you must access"], a: 1, exp: "'Under no circumstances' başa geldiğinde yardımcı fiil öznenin önüne geçer (should you access)." }
-        ],
-        review: "📌 <b>Özet Formül:</b> Olumsuz Zarf (Rarely, Seldom, Not only) + <b>Yardımcı Fiil + Özne + Fiil</b>."
-    }
-};
-
 function switchGrammarCat(catKey, btn) {
     window.currentGrammarCategory = catKey;
     document.querySelectorAll('#grammarCatTabs .tab-btn').forEach(b => b.classList.remove('active'));
@@ -2321,7 +2206,7 @@ function renderBadges(unlockedStatus) {
 const listeningVideos = {
     ted1: { embed: "https://www.youtube-nocookie.com/embed/rxEbDOR5c-M", watch: "https://www.youtube.com/watch?v=rxEbDOR5c-M" },
     bbc1: { embed: "https://www.youtube-nocookie.com/embed/9ifQ3xRz4hM", watch: "https://www.youtube.com/watch?v=9ifQ3xRz4hM" },
-    lecture1: { embed: "https://www.youtube-nocookie.com/embed/d2gitF9_CS4", watch: "https://www.youtube.com/watch?v=d2gitF9_CS4" }
+    lecture1: { embed: "https://www.youtube-nocookie.com/embed/d2gitF9_CS4", watch: "https://www.youtube.com/watch?d=d2gitF9_CS4" }
 };
 
 function switchListeningVideo(key, btn) {
@@ -2339,322 +2224,36 @@ function handleListeningNotesInput() {
     setTimeout(() => { status.style.display = "none"; }, 1000);
 }
 
-const programData = [
-    {
-        week: "1. HAFTA (12-18 AĞUSTOS): TEMEL YAPILAR, BAĞLAÇLAR VE ESSAY YAPISI",
-        days: [
-            { id: "d1", date: "12 Ağu Çarşamba", type: "3 Başlık", tasks: ["Grammar: Conjunctions & Transitions + 25 Soru", "Reading: Read Theory 2 Paragraf Okuma", "Vocabulary: AWL Set 1 (25 Kelime)"] },
-            { id: "d2", date: "13 Ağu Perşembe", type: "2 Başlık", tasks: ["Listening: BBC 6 Min / TED-Ed (2 Dinleme)", "Writing: Opinion Essay Yapısı & Taslak"] },
-            { id: "d3", date: "14 Ağu Cuma", type: "3 Başlık", tasks: ["Grammar: Relative Clauses + 20 Soru", "Reading: 1 Cloze Test + 1 Paragraf", "Vocabulary: AWL Set 2 (20 Yeni Kelime)"] },
-            { id: "d4", date: "15 Ağu Cumartesi", type: "2 Başlık", tasks: ["Listening: Akademik Konuşma + Soru", "Writing: 1 Tam Opinion Essay Yazımı"] },
-            { id: "d5", date: "16 Ağu Pazar", type: "3 Başlık", tasks: ["Grammar: Noun Clauses & Reported Speech", "Reading: C1 Seviye Akademik Metin", "Vocabulary: 1. Hafta Kelime Testi"] },
-            { id: "d6", date: "17 Ağu Pazartesi", type: "2 Başlık", tasks: ["Listening & Reading: TED Talk + Transkript", "Writing: Clause Yapıları ile Self-Editing"] },
-            { id: "d7", date: "18 Ağu Salı", type: "2 Başlık", tasks: ["Deneme: 50 Soruluk Karma Test", "Analiz: Yanlış Soru ve Zayıf Nokta Tespiti"] }
-        ]
-    },
-    {
-        week: "2. HAFTA (19-25 AĞUSTOS): İLERİ SEVIYE GRAMER, İKİ TARAFI SAVUNAN ESSAY VE CLOZE TESTLER",
-        days: [
-            { id: "d8", date: "19 Ağu Çarşamba", type: "3 Başlık", tasks: ["Grammar: Passive Voice & Causatives + 20 Soru", "Reading: Sosyal Bilimler / Tarih 2 Paragraf", "Vocabulary: AWL Set 3 (25 Yeni Kelime)"] },
-            { id: "d9", date: "20 Ağu Perşembe", type: "2 Başlık", tasks: ["Listening: Akademik Lecture + Özet", "Writing: Advantage / Disadvantage Yapısı"] },
-            { id: "d10", date: "21 Ağu Cuma", type: "3 Başlık", tasks: ["Grammar: Conditionals & Wish Clauses", "Reading: 2 Cloze Test + Bağlaç Analizi", "Vocabulary: AWL Set 4 (20 Yeni Kelime)"] },
-            { id: "d11", date: "22 Ağu Cumartesi", type: "2 Başlık", tasks: ["Listening: TOEFL/IELTS Tarzı Parça", "Writing: 1 Tam Adv / Disadv Essay"] },
-            { id: "d12", date: "23 Ağu Pazar", type: "3 Başlık", tasks: ["Grammar: Modal Verbs & Modals in Past", "Reading: Çevre / Doğa Temalı C1 Metin", "Vocabulary: Tüm Kelimelerle Cümle Kurma"] },
-            { id: "d13", date: "24 Ağu Pazartesi", type: "2 Başlık", tasks: ["Listening: Podcast + Ana Fikir Not Alma", "Writing: Modals & Bağlaçlı Essay Taslağı"] },
-            { id: "d14", date: "25 Ağu Salı", type: "2 Başlık", tasks: ["Deneme: İTÜ / Bilkent Örnek Sınavı", "Analiz: Yanlış Soruların Konu Analizi"] }
-        ]
-    },
-    {
-        week: "3. HAFTA (26 AĞUSTOS - 1 EYLÜL): AKADEMIK DERİNLİK, INVERSION VE PROBLEM-SOLUTION",
-        days: [
-            { id: "d15", date: "26 Ağu Çarşamba", type: "3 Başlık", tasks: ["Grammar: Inversion (Devrik Cümleler) + 20 Soru", "Reading: Medipol Tarzı 2 Ağır Metin", "Vocabulary: AWL Set 5 (25 Yeni Kelime)"] },
-            { id: "d16", date: "27 Ağu Perşembe", type: "2 Başlık", tasks: ["Listening: Akademik Sunum + Boşluklar", "Writing: Problem - Solution Yapısı"] },
-            { id: "d17", date: "28 Ağu Cuma", type: "3 Başlık", tasks: ["Grammar: Participle Clauses (Kısaltmalar)", "Reading: Psikoloji / Felsefe 2 Paragraf", "Vocabulary: AWL Set 6 (20 Yeni Kelime)"] },
-            { id: "d18", date: "29 Ağu Cumartesi", type: "2 Başlık", tasks: ["Listening: Detaylı Note-taking + Soru", "Writing: 1 Tam Problem - Solution Essay"] },
-            { id: "d19", date: "30 Ağu Pazar", type: "3 Başlık", tasks: ["Grammar: Prepositions & Restatement Taktikleri", "Reading: Ekonomi / Küreselleşme Metni", "Vocabulary: 3 Haftanın Kelime Kartları"] },
-            { id: "d20", date: "31 Ağu Pazartesi", type: "2 Başlık", tasks: ["Listening & Reading: İleri TED Konuşması", "Writing: Cause - Effect Essay Yapısı & Taslak"] },
-            { id: "d21", date: "01 Eyl Salı", type: "2 Başlık", tasks: ["Deneme: Süreli Tam Reading + Grammar", "Analiz: Hatalı Bağlaç & Gramer Çözümü"] }
-        ]
-    },
-    {
-        week: "4. HAFTA (2-10 EYLÜL): SINAV PROVALARI, HIZLI TEKRARLAR VE BİTİŞ KAMPI",
-        days: [
-            { id: "d22", date: "02 Eyl Çarşamba", type: "3 Başlık", tasks: ["Grammar: Sentence Completion & Karma Test", "Reading: Hızlı Okuma (Skimming/Scanning)", "Vocabulary: Sınavda Çok Çıkan Collocations"] },
-            { id: "d23", date: "03 Eyl Perşembe", type: "2 Başlık", tasks: ["Listening: Doğrudan Soru Çözmeli Listening", "Writing: 1 Tam Cause - Effect Essay"] },
-            { id: "d24", date: "04 Eyl Cuma", type: "3 Başlık", tasks: ["Grammar: Tüm Bağlaçlar Hızlı Tekrar", "Reading: Medipol Örnek Format Birebir", "Vocabulary: Tüm Kelimelerin Taraması"] },
-            { id: "d25", date: "05 Eyl Cumartesi", type: "2 Başlık", tasks: ["Listening: Karışık Aksanlı Dinleme Pratiği", "Writing: 30 Dk Süreli Serbest Essay"] },
-            { id: "d26", date: "06 Eyl Pazar", type: "3 Başlık", tasks: ["Grammar: Sık Yapılan Hatalar Testi", "Reading: Süreli 2 Akademik Paragraf", "Vocabulary: Eş & Zıt Anlamlı Kelimeler"] },
-            { id: "d27", date: "07 Eyl Pazartesi", type: "2 Başlık", tasks: ["Sınav Provası: Tam Süreli Birebir Deneme", "Writing: Sınav Anı Formatında Essay"] },
-            { id: "d28", date: "08 Eyl Salı", type: "2 Başlık", tasks: ["Grammar/Reading: Deneme Çözümleri", "Vocabulary: Unutulan Kelime Kartları"] },
-            { id: "d29", date: "09 Eyl Çarşamba", type: "3 Başlık", tasks: ["Grammar & Vocab: Önemli Bağlaç Tablosu", "Reading: Hafif 1 Kısa Akademik Metin", "Writing: Şablon & Bağlaç Kontrolü"] },
-            { id: "d30", date: "10 Eyl Perşembe", type: "KAMP BİTİŞİ", tasks: ["Genel Prova / Kapanış: Tüm Notların Taraması", "Zihinsel Hazırlık: Sınava Hazır Duruma Gelme"] }
-        ]
-    }
-];
-
-const wordsData = [
-    // SET 1
-    { set: 1, word: "Analyze (v)", meaning: "Analiz etmek, incelemek", syn: "Examine, Inspect" },
-    { set: 1, word: "Approach (n/v)", meaning: "Yaklaşım; yaklaşmak", syn: "Method, Strategy" },
-    { set: 1, word: "Assess (v)", meaning: "Değerlendirmek", syn: "Evaluate, Estimate" },
-    { set: 1, word: "Assume (v)", meaning: "Varsaymak, farz etmek", syn: "Suppose, Presume" },
-    { set: 1, word: "Authority (n)", meaning: "Otorite, yetki, uzman", syn: "Power, Expert" },
-    { set: 1, word: "Benefit (n/v)", meaning: "Fayda, yarar", syn: "Advantage, Profit" },
-    { set: 1, word: "Concept (n)", meaning: "Kavram, fikir", syn: "Idea, Notion" },
-    { set: 1, word: "Consist of (v)", meaning: "-den oluşmak", syn: "Be composed of" },
-    { set: 1, word: "Constituent (n/adj)", meaning: "Bileşen, kurucu öğe", syn: "Component, Element" },
-    { set: 1, word: "Context (n)", meaning: "Bağlam, ortam", syn: "Background, Situation" },
-    { set: 1, word: "Contract (n/v)", meaning: "Sözleşme; küçülmek", syn: "Agreement, Shrink" },
-    { set: 1, word: "Create (v)", meaning: "Oluşturmak, yaratmak", syn: "Produce, Generate" },
-    { set: 1, word: "Data (n)", meaning: "Veri, bilgi", syn: "Information, Facts" },
-    { set: 1, word: "Define (v)", meaning: "Tanımlamak", syn: "Explain, Describe" },
-    { set: 1, word: "Derive (from) (v)", meaning: "-den türetmek", syn: "Obtain, Get" },
-    { set: 1, word: "Distribute (v)", meaning: "Dağıtmak", syn: "Hand out, Spread" },
-    { set: 1, word: "Economy (n)", meaning: "Ekonomi, iktisat", syn: "Financial system" },
-    { set: 1, word: "Environment (n)", meaning: "Çevre, ortam", syn: "Surroundings, Habitat" },
-    { set: 1, word: "Establish (v)", meaning: "Kurmak, tesis etmek", syn: "Set up, Found" },
-    { set: 1, word: "Estimate (v/n)", meaning: "Tahmin etmek", syn: "Guess, Calculate" },
-    { set: 1, word: "Evident (adj)", meaning: "Açık, aşikar, belli", syn: "Obvious, Clear" },
-    { set: 1, word: "Export (v/n)", meaning: "İhraç etmek; ihracat", syn: "Sell abroad" },
-    { set: 1, word: "Factor (n)", meaning: "Faktör, etken", syn: "Element, Cause" },
-    { set: 1, word: "Financial (adj)", meaning: "Finansal, mali", syn: "Economic, Monetary" },
-    { set: 1, word: "Formula (n)", meaning: "Formül, yöntem", syn: "Method, Recipe" },
-
-    // SET 2
-    { set: 2, word: "Achieve (v)", meaning: "Başarmak, elde etmek", syn: "Accomplish, Attain" },
-    { set: 2, word: "Acquire (v)", meaning: "Edinmek, kazanmak", syn: "Obtain, Gain" },
-    { set: 2, word: "Administration (n)", meaning: "Yönetim, idare", syn: "Management, Executive" },
-    { set: 2, word: "Affect (v)", meaning: "Etkilemek", syn: "Influence, Impact" },
-    { set: 2, word: "Appropriate (adj)", meaning: "Uygun, elverişli", syn: "Suitable, Proper" },
-    { set: 2, word: "Aspect (n)", meaning: "Açı, yön, bakım", syn: "Feature, Side" },
-    { set: 2, word: "Assist (v)", meaning: "Yardım etmek", syn: "Help, Aid" },
-    { set: 2, word: "Category (n)", meaning: "Kategori, sınıf", syn: "Group, Class" },
-    { set: 2, word: "Chapter (n)", meaning: "Bölüm (kitap vb.)", syn: "Section, Part" },
-    { set: 2, word: "Commission (n/v)", meaning: "Komisyon; görevlendirmek", syn: "Committee, Order" },
-    { set: 2, word: "Community (n)", meaning: "Topluluk, halk", syn: "Society, Public" },
-    { set: 2, word: "Complex (adj)", meaning: "Karmaşık, zor", syn: "Complicated, Intricate" },
-    { set: 2, word: "Compute (v)", meaning: "Hesaplamak", syn: "Calculate, Reckon" },
-    { set: 2, word: "Conclude (v)", meaning: "Sonuçlandırmak, bitirmek", syn: "Finish, Infer" },
-    { set: 2, word: "Conduct (v/n)", meaning: "Yürütmek; davranış", syn: "Carry out, Behavior" },
-    { set: 2, word: "Consequence (n)", meaning: "Sonuç, netice", syn: "Result, Outcome" },
-    { set: 2, word: "Construct (v)", meaning: "İnşa etmek, kurmak", syn: "Build, Erect" },
-    { set: 2, word: "Consume (v)", meaning: "Tüketmek", syn: "Use up, Eat/Drink" },
-    { set: 2, word: "Credit (n/v)", meaning: "Kredi, övgü; inanmak", syn: "Praise, Belief" },
-    { set: 2, word: "Culture (n)", meaning: "Kültür, medeniyet", syn: "Customs, Lifestyle" },
-    { set: 2, word: "Design (n/v)", meaning: "Tasarım; tasarlamak", syn: "Plan, Draft" },
-    { set: 2, word: "Distinct (adj)", meaning: "Ayrık, farklı, belirgin", syn: "Different, Clear" },
-    { set: 2, word: "Element (n)", meaning: "Öğe, unsur", syn: "Component, Factor" },
-    { set: 2, word: "Evaluate (v)", meaning: "Değerlendirmek", syn: "Assess, Judge" },
-    { set: 2, word: "Feature (n/v)", meaning: "Özellik; yer vermek", syn: "Characteristic, Highlight" },
-
-    // SET 3
-    { set: 3, word: "Alternative (n/adj)", meaning: "Alternatif, seçenek", syn: "Option, Substitute" },
-    { set: 3, word: "Circumstance (n)", meaning: "Durum, koşul", syn: "Situation, Condition" },
-    { set: 3, word: "Comment (n/v)", meaning: "Yorum; yorum yapmak", syn: "Remark, State" },
-    { set: 3, word: "Compensate (v)", meaning: "Telafi etmek", syn: "Make up for, Pay" },
-    { set: 3, word: "Component (n)", meaning: "Bileşen, parça", syn: "Element, Part" },
-    { set: 3, word: "Consent (n/v)", meaning: "Rıza, onay; onaylamak", syn: "Agreement, Permission" },
-    { set: 3, word: "Considerable (adj)", meaning: "Önemli, kayda değer", syn: "Significant, Substantial" },
-    { set: 3, word: "Constant (adj)", meaning: "Sürekli, sabit", syn: "Continuous, Unchanging" },
-    { set: 3, word: "Constrain (v)", meaning: "Kısıtlamak, zorlamak", syn: "Restrict, Limit" },
-    { set: 3, word: "Contribute (v)", meaning: "Katkıda bulunmak", syn: "Donate, Add to" },
-    { set: 3, word: "Convenient (adj)", meaning: "Uygun, elverişli", syn: "Suitable, Handy" },
-    { set: 3, word: "Core (n/adj)", meaning: "Çekirdek, temel", syn: "Center, Essential" },
-    { set: 3, word: "Corporate (adj)", meaning: "Kurumsal, şirkete ait", syn: "Business, Company" },
-    { set: 3, word: "Criteria (n)", meaning: "Kriterler, ölçütler", syn: "Standards, Measures" },
-    { set: 3, word: "Deduce (v)", meaning: "Sonuç çıkarmak", syn: "Infer, Conclude" },
-    { set: 3, word: "Demonstrate (v)", meaning: "Kanıtlamak, göstermek", syn: "Show, Prove" },
-    { set: 3, word: "Dominant (adj)", meaning: "Baskın, egemen", syn: "Main, Powerful" },
-    { set: 3, word: "Ensure (v)", meaning: "Garantiye almak, sağlamak", syn: "Make sure, Guarantee" },
-    { set: 3, word: "Exclude (v)", meaning: "Hariç tutmak, dışlamak", syn: "Leave out, Rule out" },
-    { set: 3, word: "Framework (n)", meaning: "Çerçeve, yapı", syn: "Structure, System" },
-    { set: 3, word: "Illustrate (v)", meaning: "Örneklendirmek, çizmek", syn: "Exemplify, Show" },
-    { set: 3, word: "Impact (n/v)", meaning: "Etki; etkilemek", syn: "Effect, Influence" },
-    { set: 3, word: "Initial (adj)", meaning: "İlk, başlangıçtaki", syn: "First, Beginning" },
-    { set: 3, word: "Instance (n)", meaning: "Örnek, durum", syn: "Example, Case" },
-    { set: 3, word: "Interact (v)", meaning: "Etkileşime girmek", syn: "Communicate, Connect" },
-
-    // SET 4
-    { set: 4, word: "Access (n/v)", meaning: "Erişim; erişmek", syn: "Entry, Reach" },
-    { set: 4, word: "Adequate (adj)", meaning: "Yeterli, kafi", syn: "Sufficient, Enough" },
-    { set: 4, word: "Apparent (adj)", meaning: "Açık, belirgin", syn: "Obvious, Evident" },
-    { set: 4, word: "Attitude (n)", meaning: "Tutum, tavır", syn: "Manner, Approach" },
-    { set: 4, word: "Attribute (v/n)", meaning: "Atfetmek; özellik", syn: "Ascribe, Trait" },
-    { set: 4, word: "Civil (adj)", meaning: "Sivil, medeni", syn: "Public, Polite" },
-    { set: 4, word: "Code (n/v)", meaning: "Kod, kural", syn: "System, Rules" },
-    { set: 4, word: "Commit (v)", meaning: "Taahhüt etmek, işlemek", syn: "Pledge, Perform" },
-    { set: 4, word: "Concentrate (v)", meaning: "Odaklanmak", syn: "Focus, Direct" },
-    { set: 4, word: "Confer (v)", meaning: "Danışmak, vermek", syn: "Consult, Grant" },
-    { set: 4, word: "Contrast (n/v)", meaning: "Zıtlık; karşılaştırmak", syn: "Difference, Compare" },
-    { set: 4, word: "Domestic (adj)", meaning: "Yerli, evcil, ailevi", syn: "Internal, Local" },
-    { set: 4, word: "Emergence (n)", meaning: "Ortaya çıkış", syn: "Appearance, Rise" },
-    { set: 4, word: "Ethnic (adj)", meaning: "Etnik, ırksal", syn: "Racial, Cultural" },
-    { set: 4, word: "Goal (n)", meaning: "Hedef, amaç", syn: "Aim, Objective" },
-    { set: 4, word: "Grant (v/n)", meaning: "Vermek, bağışlamak; hibe", syn: "Give, Award" },
-    { set: 4, word: "Hypothesis (n)", meaning: "Hipotez, varsayım", syn: "Theory, Assumption" },
-    { set: 4, word: "Implement (v)", meaning: "Uygulamak, yürürlüğe koymak", syn: "Execute, Apply" },
-    { set: 4, word: "Implicate (v)", meaning: "Bulaştırmak, ima etmek", syn: "Involve, Imply" },
-    { set: 5, word: "Impose (v)", meaning: "Zorla kabul ettirmek", syn: "Enforce, Levy" },
-    { set: 4, word: "Integrate (v)", meaning: "Entegre etmek, birleştirmek", syn: "Combine, Merge" },
-    { set: 4, word: "Internal (adj)", meaning: "İç, dahili", syn: "Inner, Domestic" },
-    { set: 4, word: "Investigate (v)", meaning: "Araştırmak, soruşturmak", syn: "Examine, Explore" },
-    { set: 4, word: "Job (n)", meaning: "İş, meslek", syn: "Task, Occupation" },
-    { set: 4, word: "Label (n/v)", meaning: "Etiket; etiketlemek", syn: "Tag, Mark" },
-
-    // SET 5
-    { set: 5, word: "Academic (adj)", meaning: "Akademik, bilimsel", syn: "Scholarly, Educational" },
-    { set: 5, word: "Adjustment (n)", meaning: "Ayarlama, uyum", syn: "Adaptation, Modification" },
-    { set: 5, word: "Alter (v)", meaning: "Değiştirmek", syn: "Change, Modify" },
-    { set: 5, word: "Awareness (n)", meaning: "Farkındalık, bilinç", syn: "Consciousness, Knowledge" },
-    { set: 5, word: "Capacity (n)", meaning: "Kapasite, hacim", syn: "Volume, Ability" },
-    { set: 5, word: "Challenge (n/v)", meaning: "Zorluk; meydan okumak", syn: "Difficulty, Test" },
-    { set: 5, word: "Clause (n)", meaning: "Madde (yasa), cümlecik", syn: "Section, Phrase" },
-    { set: 5, word: "Compound (n/adj)", meaning: "Bileşik, karışım", syn: "Mixture, Combination" },
-    { set: 5, word: "Conflict (n/v)", meaning: "Çatışma; anlaşamamak", syn: "Clash, Dispute" },
-    { set: 5, word: "Consult (v)", meaning: "Danışmak, başvurmak", syn: "Ask, Seek advice" },
-    { set: 5, word: "Decline (v/n)", meaning: "Reddetmek, düşmek; düşüş", syn: "Decrease, Refuse" },
-    { set: 5, word: "Discretion (n)", meaning: "Takdir yetkisi, gizlilik", syn: "Choice, Prudence" },
-    { set: 5, word: "Draft (n/v)", meaning: "Taslak; taslak hazırlamak", syn: "Outline, Sketch" },
-    { set: 5, word: "Enable (v)", meaning: "Olanak sağlamak", syn: "Allow, Permit" },
-    { set: 5, word: "Enforce (v)", meaning: "Uygulamak, zorlamak", syn: "Impose, Execute" },
-    { set: 5, word: "Entity (n)", meaning: "Varlık, birim", syn: "Unit, Being" },
-    { set: 5, word: "Equivalent (adj/n)", meaning: "Eşdeğer, denk", syn: "Equal, Comparable" },
-    { set: 5, word: "Evolve (v)", meaning: "Evrimleşmek, gelişmek", syn: "Develop, Progress" },
-    { set: 5, word: "Expand (v)", meaning: "Genişlemek, büyümek", syn: "Enlarge, Extend" },
-    { set: 5, word: "Expose (v)", meaning: "Maruz bırakmak, ifşa etmek", syn: "Uncover, Reveal" },
-    { set: 5, word: "External (adj)", meaning: "Dış, harici", syn: "Outer, Outside" },
-    { set: 5, word: "Facilitate (v)", meaning: "Kolaylaştırmak", syn: "Ease, Assist" },
-    { set: 5, word: "Fundamental (adj)", meaning: "Temel, esas", syn: "Basic, Essential" },
-    { set: 5, word: "Generate (v)", meaning: "Üretmek, oluşturmak", syn: "Produce, Create" },
-    { set: 5, word: "Generation (n)", meaning: "Nesil, kuşak", syn: "Age group, Era" },
-
-    // SET 6
-    { set: 6, word: "Abstract (adj/n)", meaning: "Soyut; özet", syn: "Theoretical, Summary" },
-    { set: 6, word: "Accurate (adj)", meaning: "Doğru, kesin", syn: "Correct, Precise" },
-    { set: 6, word: "Acknowledge (v)", meaning: "Kabul etmek, onaylamak", syn: "Admit, Accept" },
-    { set: 6, word: "Aggregate (adj/n)", meaning: "Toplam, bir araya gelmiş", syn: "Total, Combined" },
-    { set: 6, word: "Allocate (v)", meaning: "Tahsis etmek, ayırmak", syn: "Assign, Apportion" },
-    { set: 6, word: "Author (n/v)", meaning: "Yazar; yazmak", syn: "Writer, Creator" },
-    { set: 6, word: "Bond (n/v)", meaning: "Bağ; bağlanmak", syn: "Connection, Link" },
-    { set: 6, word: "Brief (adj)", meaning: "Kısa, öz", syn: "Short, Concise" },
-    { set: 6, word: "Capable (adj)", meaning: "Yetenekli, muktedir", syn: "Able, Competent" },
-    { set: 6, word: "Cite (v)", meaning: "Alıntı yapmak, bahsetmek", syn: "Quote, Mention" },
-    { set: 6, word: "Cooperate (v)", meaning: "İşbirliği yapmak", syn: "Collaborate, Work together" },
-    { set: 6, word: "Discriminate (v)", meaning: "Ayrımcılık yapmak, ayırt etmek", syn: "Differentiate, Bias" },
-    { set: 6, word: "Display (v/n)", meaning: "Sergilemek; gösterge", syn: "Show, Exhibit" },
-    { set: 6, word: "Diverse (adj)", meaning: "Çeşitli, farklı", syn: "Various, Varied" },
-    { set: 6, word: "Domain (n)", meaning: "Alan, alan adı", syn: "Field, Territory" },
-    { set: 6, word: "Edit (v)", meaning: "Düzenlemek, editlemek", syn: "Revise, Correct" },
-    { set: 6, word: "Enhance (v)", meaning: "Geliştirmek, artırmak", syn: "Improve, Boost" },
-    { set: 6, word: "Exceed (v)", meaning: "Aşmak, geçmek", syn: "Surpass, Go beyond" },
-    { set: 6, word: "Expert (n/adj)", meaning: "Uzman, usta", syn: "Specialist, Professional" },
-    { set: 6, word: "Explicit (adj)", meaning: "Açık, net, belirgin", syn: "Clear, Direct" },
-    { set: 6, word: "Federal (adj)", meaning: "Federal, birleşik", syn: "National, Central" },
-    { set: 6, word: "Fee (n)", meaning: "Ücret, harç", syn: "Charge, Payment" },
-    { set: 6, word: "Flexibility (n)", meaning: "Esneklik", syn: "Adaptability, Elasticity" },
-    { set: 6, word: "Furthermore (adv)", meaning: "Ayrıca, dahası", syn: "Moreover, In addition" },
-    { set: 6, word: "Gender (n)", meaning: "Cinsiyet", syn: "Sex" }
-];
-
-let currentSetFilter = 'all';
-let hideMeanings = false;
-let selectedEssayWords = [];
-
-function toggleMobileSidebar() { document.getElementById("sidebar").classList.toggle("open"); }
-function closeMobileSidebarIfOpen() {
-    const sidebar = document.getElementById("sidebar");
-    if (sidebar.classList.contains("open")) sidebar.classList.remove("open");
-}
-
-function toggleResetCard(showReset) {
-    document.getElementById("mainAuthCard").style.display = showReset ? "none" : "block";
-    document.getElementById("resetAuthCard").style.display = showReset ? "block" : "none";
-}
-
-function getKey(word) { return `awl_sentence_${word.split(' ')[0].toLowerCase().replace(/[^a-z]/g, '')}`; }
-
-function getUserVal(key) {
-    if (window.cloudUserData && window.cloudUserData[key] !== undefined) {
-        return window.cloudUserData[key];
-    }
-    return localStorage.getItem(key) || "";
-}
-
-function renderProgram() {
-    const container = document.getElementById("program-container");
-    container.innerHTML = "";
-
-    let totalDays = 0;
-    let completedDaysCount = 0;
-
-    programData.forEach(weekData => {
-        const weekTitle = document.createElement("div");
-        weekTitle.className = "program-week-title";
-        weekTitle.innerText = weekData.week;
-        container.appendChild(weekTitle);
-
-        weekData.days.forEach(day => {
-            totalDays++;
-            const isCompleted = getUserVal(`prog_day_${day.id}`) === 'true' || getUserVal(`prog_day_${day.id}`) === true;
-            if (isCompleted) completedDaysCount++;
-
-            const card = document.createElement("div");
-            card.className = `program-card ${isCompleted ? 'completed' : ''}`;
-
-            let tasksHTML = "";
-            day.tasks.forEach((task, tIndex) => {
-                const taskKey = `prog_task_${day.id}_${tIndex}`;
-                const isTaskChecked = getUserVal(taskKey) === 'true' || getUserVal(taskKey) === true;
-                tasksHTML += `
-                    <li>
-                        <input type="checkbox" class="program-checkbox" ${isTaskChecked ? 'checked' : ''} onchange="toggleProgramTask('${day.id}', ${tIndex}, this.checked)">
-                        <span style="${isTaskChecked ? 'text-decoration:line-through; opacity:0.7;' : ''}">${task}</span>
-                    </li>
-                `;
-            });
-
-            card.innerHTML = `
-                <div class="program-card-header">
-                    <span class="program-date">${day.date}</span>
-                    <span class="program-badge">${day.type}</span>
-                </div>
-                <ul class="program-tasks">${tasksHTML}</ul>
-            `;
-
-            container.appendChild(card);
-        });
-    });
-
-    const percent = Math.round((completedDaysCount / totalDays) * 100);
-    document.getElementById("programProgressFill").style.width = `${percent}%`;
-    document.getElementById("programProgressText").innerText = `${completedDaysCount} / ${totalDays} Gün Tamamlandı (%${percent})`;
-}
-
-function toggleProgramTask(dayId, tIndex, isChecked) {
-    const taskKey = `prog_task_${dayId}_${tIndex}`;
-    if (window.saveToCloud) window.saveToCloud(taskKey, isChecked);
-
-    const dayData = programData.flatMap(w => w.days).find(d => d.id === dayId);
-    let allChecked = true;
-    dayData.tasks.forEach((t, idx) => {
-        const key = `prog_task_${dayId}_${idx}`;
-        const val = (idx === tIndex) ? isChecked : (getUserVal(key) === 'true' || getUserVal(key) === true);
-        if (!val) allChecked = false;
-    });
-
-    if (window.saveToCloud) window.saveToCloud(`prog_day_${dayId}`, allChecked);
-    renderProgram();
-}
-
-function switchView(viewId, element) {
+// ASYNC KONTROLLÜ SEKME DEĞİŞTİRME
+async function switchView(viewId, element) {
     if (window.fbUser && window.fbUser.isAnonymous && (viewId === 'profile-view' || viewId === 'badges-view' || viewId === 'bookmarks-view')) {
         alert("Bu bölüme erişmek için e-posta veya Google ile giriş yapmalısınız.");
         return;
     }
 
-    if (viewId === 'super-admin-view' && !window.isSuperAdminAgah) {
-        alert("Bu panele yalnızca Süper Admin (Agah) erişebilir.");
-        return;
+    // SÜPER ADMİN ERİŞİM ENGELİ (SADECE AGAH)
+    if (viewId === 'super-admin-view') {
+        const exactUsername = (getUserVal('profile_name') || "").trim().toLowerCase();
+        if (exactUsername !== "agah") {
+            alert("⛔ Bu panele yalnızca Süper Admin (Agah) erişebilir.");
+            return;
+        }
+    }
+
+    // RAPOR PANELİ ERİŞİM ENGELİ (YETKİSİ ALINAN KULLANICI GİREMEZ)
+    if (viewId === 'admin-view') {
+        const exactUsername = (getUserVal('profile_name') || "").trim().toLowerCase();
+        let hasAccess = (exactUsername === "agah");
+        if (!hasAccess && window.fbUser) {
+            try {
+                const aSnap = await getDoc(doc(db, "admins", window.fbUser.uid));
+                hasAccess = aSnap.exists() && aSnap.data().isAdmin === true;
+            } catch (e) { hasAccess = false; }
+        }
+        if (!hasAccess) {
+            alert("⛔ Bu panele erişim yetkiniz bulunmuyor veya yetkiniz geri alınmış.");
+            return;
+        }
     }
 
     document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
