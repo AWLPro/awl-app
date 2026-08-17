@@ -1132,7 +1132,7 @@
 
     body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        background-color: var(--bg);
+        background-color: transparent;
         color: var(--text);
         margin: 0;
         padding: 0;
@@ -1140,6 +1140,68 @@
         flex-direction: column;
         height: 100vh;
         overflow: hidden;
+    }
+
+    /* ===== Animasyonlu Arka Plan ===== */
+    .animated-bg {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        overflow: hidden;
+        background-color: var(--bg);
+        transition: background-color 0.3s ease;
+    }
+
+    .animated-bg::before {
+        content: "";
+        position: absolute;
+        inset: -25%;
+        background: linear-gradient(120deg,
+            rgba(59, 130, 246, 0.16),
+            rgba(139, 92, 246, 0.16),
+            rgba(236, 72, 153, 0.13),
+            rgba(16, 185, 129, 0.13),
+            rgba(59, 130, 246, 0.16));
+        background-size: 400% 400%;
+        animation: awlGradientShift 22s ease infinite;
+        filter: blur(60px);
+    }
+
+    .animated-bg .blob {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(70px);
+        opacity: 0.45;
+        will-change: transform;
+        animation: awlBlobFloat 22s ease-in-out infinite;
+    }
+    .animated-bg .blob.b1 { width: 380px; height: 380px; background: #3b82f6; top: -110px; left: -90px; animation-duration: 23s; }
+    .animated-bg .blob.b2 { width: 340px; height: 340px; background: #8b5cf6; bottom: -120px; right: -70px; animation-duration: 27s; animation-delay: -4s; }
+    .animated-bg .blob.b3 { width: 280px; height: 280px; background: #ec4899; top: 38%; left: 62%; animation-duration: 19s; animation-delay: -9s; }
+    .animated-bg .blob.b4 { width: 260px; height: 260px; background: #10b981; bottom: 8%; left: 8%; animation-duration: 25s; animation-delay: -13s; }
+    .animated-bg .blob.b5 { width: 220px; height: 220px; background: #f59e0b; top: 12%; right: 18%; animation-duration: 18s; animation-delay: -6s; }
+
+    @keyframes awlBlobFloat {
+        0%, 100% { transform: translate(0, 0) scale(1); }
+        25% { transform: translate(40px, -30px) scale(1.08); }
+        50% { transform: translate(-25px, 35px) scale(0.94); }
+        75% { transform: translate(30px, 20px) scale(1.05); }
+    }
+
+    @keyframes awlGradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    @media (max-width: 768px) {
+        .animated-bg .blob { filter: blur(45px); opacity: 0.35; }
+        .animated-bg .blob.b1, .animated-bg .blob.b2 { width: 240px; height: 240px; }
+        .animated-bg .blob.b3, .animated-bg .blob.b4, .animated-bg .blob.b5 { width: 170px; height: 170px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .animated-bg::before, .animated-bg .blob { animation: none; }
     }
 
     .mobile-header {
@@ -1343,6 +1405,14 @@
 </style>
 </head>
 <body>
+
+<div class="animated-bg" aria-hidden="true">
+    <span class="blob b1"></span>
+    <span class="blob b2"></span>
+    <span class="blob b3"></span>
+    <span class="blob b4"></span>
+    <span class="blob b5"></span>
+</div>
 
 <div class="mobile-header">
     <span class="mobile-header-title" style="display: flex; align-items: center; gap: 6px;">
